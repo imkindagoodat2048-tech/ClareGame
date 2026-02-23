@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClareGame</title>
+
+    <!-- Firebase — must load BEFORE any script that uses it -->
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f0f1a;
+            --chat-bg: #1a1a2d;
+            --primary: #4834d4;
+            --danger: #eb4d4b;
+            --text-white: #ffffff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-color);
+            color: var(--text-white);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .hidden { display: none !important; }
+
+        /* ── BAN SCREEN ── */
+        #ban-overlay {
+            position: fixed; inset: 0; background: #000; z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+        }
+
+        /* ── AUTH — identical to ClareCool ── */
+        #auth-container {
+            position: fixed; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-color);
+            z-index: 100;
+        }
+        .auth-box {
+            background: var(--chat-bg);
+            padding: 30px;
+            border-radius: 15px;
+            width: 280px;
+            text-align: center;
+            border: 1px solid var(--primary);
+        }
+        .auth-box h2 { color: var(--primary); margin: 0 0 15px 0; font-size: 24px; }
+        .auth-box input {
+            display: block; width: 100%; box-sizing: border-box;
+            background: #0f0f1a; border: 1px solid #333; color: white;
+            border-radius: 8px; padding: 10px; font-size: 12px; outline: none;
+            margin-bottom: 10px;
+        }
+        .auth-box input:focus { border-color: var(--primary); }
+        .auth-box button {
+            width: 100%; padding: 12px; background: var(--primary);
+            border: none; border-radius: 8px; color: white;
+            font-weight: bold; margin-top: 10px; cursor: pointer;
+        }
+        .auth-box .toggle {
+            cursor: pointer; color: #888; font-size: 11px; margin-top: 15px;
+        }
+        .auth-box .toggle:hover { color: var(--primary); }
+
+        /* ── GAME WRAPPER ── */
+        #game-wrapper {
+            width: 100%; height: 100vh;
+            display: flex; flex-direction: column;
+        }
+
+        /* ── TOP BAR — same style as ClareCool ── */
+        #top-bar {
+            padding: 6px 12px;
+            background: rgba(26, 26, 45, 0.97);
+            border-bottom: 2px solid var(--primary);
+            display: flex; align-items: center; justify-content: space-between; gap: 5px;
+            z-index: 50; position: relative;
+            flex-shrink: 0;
+        }
+        .btn-group {
+            display: flex; align-items: center; gap: 4px;
+            overflow-x: auto; scrollbar-width: none; flex: 1;
+        }
+        .btn-group::-webkit-scrollbar { display: none; }
+        .icon-btn {
+            background: #2f3542; color: white; border: none; border-radius: 4px;
+            padding: 4px 8px; font-size: 11px; cursor: pointer; height: 26px;
+            flex-shrink: 0; transition: transform 0.1s;
+        }
+        .icon-btn:active { transform: scale(0.9); }
+        .exit-btn {
+            background: #444; color: white; border: none; border-radius: 4px;
+            padding: 4px 10px; font-size: 10px; cursor: pointer; height: 26px;
+        }
+        .pfp-circle {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 1px solid var(--primary); cursor: pointer;
+            object-fit: cover; flex-shrink: 0;
+        }
+        #username-tag {
+            font-size: 11px; color: #a29bfe; font-weight: 600; white-space: nowrap;
+        }
+
+        /* ── CANVAS AREA ── */
+        #canvas-wrap {
+            flex: 1; position: relative; overflow: hidden;
+        }
+        #game-canvas {
+            display: block; width: 100%; height: 100%;
+        }
+
+        /* ── HUD overlaid on canvas ── */
+        #hud {
+            position: absolute; inset: 0; pointer-events: none;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 16px; height: 16px;
+        }
+        #crosshair::before, #crosshair::after {
+            content: ''; position: absolute; background: rgba(255,255,255,0.7);
+        }
+        #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+        #crosshair::after  { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+
+        #pickup-prompt {
+            position: absolute; top: 56%; left: 50%; transform: translateX(-50%);
+            background: rgba(26,26,45,0.85); border: 1px solid var(--primary);
+            padding: 5px 14px; font-size: 12px; color: #a29bfe; display: none;
+            border-radius: 6px;
+        }
+        #controls-hint {
+            position: absolute; bottom: 12px; left: 14px;
+            font-size: 10px; color: rgba(162,155,254,0.5); line-height: 1.9;
+        }
+        #notif {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            background: rgba(26,26,45,0.92); border: 1px solid var(--primary);
+            padding: 5px 18px; font-size: 12px; color: #a29bfe;
+            border-radius: 6px; display: none; white-space: nowrap;
+        }
+
+        /* Inventory */
+        #inventory {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 5px; pointer-events: none;
+        }
+        .inv-slot {
+            width: 44px; height: 44px;
+            border: 1px solid rgba(72,52,212,0.4);
+            background: rgba(26,26,45,0.75);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; border-radius: 6px;
+        }
+        .inv-slot.active {
+            border-color: var(--primary);
+            box-shadow: 0 0 8px rgba(72,52,212,0.5);
+        }
+
+        /* ── CHAT — bottom-right, same bubble style as ClareCool ── */
+        #chat-log {
+            position: absolute; bottom: 14px; right: 14px;
+            width: 270px; max-height: 200px;
+            display: flex; flex-direction: column; gap: 5px;
+            overflow: hidden; pointer-events: none;
+        }
+        .chat-line {
+            background: rgba(26,26,45,0.85);
+            border-left: 2px solid var(--primary);
+            padding: 4px 8px; font-size: 11px; border-radius: 0 6px 6px 0;
+            word-break: break-word; animation: slideIn 0.15s ease;
+        }
+        .chat-line .cname { color: #a29bfe; font-weight: 600; margin-right: 4px; }
+        .chat-line .cname.sys { color: #2ed573; }
+        @keyframes slideIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+
+        #chat-input-wrap {
+            position: absolute; bottom: 14px; right: 14px;
+            width: 270px; display: none; pointer-events: all; z-index: 10;
+        }
+        #chat-input-wrap input {
+            width: 100%; background: #0f0f1a; border: 1px solid var(--primary);
+            color: white; border-radius: 8px; padding: 8px 12px;
+            font-size: 12px; outline: none; font-family: inherit;
+        }
+        #chat-input-wrap .chint {
+            font-size: 9px; color: #555; margin-top: 3px; text-align: right;
+        }
+
+        /* Overhead tags */
+        .overhead-name {
+            position: fixed; pointer-events: none;
+            background: rgba(26,26,45,0.85); border: 1px solid var(--primary);
+            color: #a29bfe; font-size: 10px; font-weight: 600;
+            padding: 2px 7px; border-radius: 4px;
+            transform: translateX(-50%); white-space: nowrap;
+            font-family: 'Inter', sans-serif;
+        }
+        .overhead-bubble {
+            position: fixed; pointer-events: none;
+            background: rgba(26,26,45,0.92); border: 1px solid var(--primary);
+            color: white; font-size: 11px;
+            padding: 4px 9px; border-radius: 8px;
+            transform: translateX(-50%);
+            max-width: 180px; word-break: break-word; text-align: center;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Modal — identical to ClareCool */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+            z-index: 1000; display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal-box {
+            background: var(--chat-bg); padding: 25px; border-radius: 15px;
+            width: 280px; text-align: center; border: 1px solid var(--primary);
+            box-shadow: 0 0 20px rgba(72,52,212,0.3);
+            max-height: 80vh; overflow-y: auto;
+        }
+        .modal-box h3 { margin-bottom: 12px; color: var(--primary); }
+    </style>
+</head>
+<body>
+
+<!-- BAN -->
+<div id="ban-overlay" class="hidden">
+    <h1 style="color:var(--danger); font-size:40px;">BANNED</h1>
+    <p>Your access to ClareGame has been revoked.</p>
+</div>
+
+<!-- AUTH -->
+<div id="auth-container">
+    <div class="auth-box">
+        <h2 id="auth-header">ClareGame</h2>
+        <input type="text"     id="username-in" placeholder="Username">
+        <input type="password" id="password-in" placeholder="Password">
+        <button onclick="handleLogin()">Login</button>
+        <p class="toggle" id="toggle-auth-text" onclick="toggleMode()">New here? Sign Up</p>
+    </div>
+</div>
+
+<!-- GAME -->
+<div id="game-wrapper" class="hidden">
+    <!-- TOP BAR -->
+    <div id="top-bar">
+        <div class="btn-group">
+            <img id="my-mini-pfp" class="pfp-circle" src="https://via.placeholder.com/28">
+            <span id="username-tag"></span>
+            <button class="icon-btn" onclick="openControls()">❓</button>
+            <button class="icon-btn" onclick="openMembers()">👥</button>
+        </div>
+        <button class="exit-btn" onclick="location.reload()">Exit</button>
+    </div>
+
+    <!-- CANVAS -->
+    <div id="canvas-wrap">
+        <canvas id="game-canvas"></canvas>
+
+        <!-- HUD -->
+        <div id="hud">
+            <div id="crosshair"></div>
+            <div id="pickup-prompt">[ E ] pick up</div>
+            <div id="notif"></div>
+            <div id="controls-hint">
+                WASD · move<br>
+                MOUSE · look<br>
+                E · pick up<br>
+                / · chat
+            </div>
+            <div id="inventory">
+                <div class="inv-slot active" id="slot-0"></div>
+                <div class="inv-slot" id="slot-1"></div>
+                <div class="inv-slot" id="slot-2"></div>
+                <div class="inv-slot" id="slot-3"></div>
+                <div class="inv-slot" id="slot-4"></div>
+            </div>
+        </div>
+
+        <!-- CHAT -->
+        <div id="chat-log"></div>
+        <div id="chat-input-wrap">
+            <input type="text" id="chat-in" placeholder="Say something..." maxlength="120">
+            <div class="chint">ENTER to send · ESC to cancel</div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL -->
+<div id="master-modal" class="modal-overlay hidden">
+    <div class="modal-box" id="modal-content"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  FIREBASE  (same project as ClareCool)
+// ─────────────────────────────────────────────
+const fbConfig = {
+    apiKey: "AIzaSyB9Rlvq49-AiLBzMDvjz71QCTT4d6NqE98",
+    authDomain: "mychat-28205.firebaseapp.com",
+    databaseURL: "https://mychat-28205-default-rtdb.firebaseio.com",
+    projectId: "mychat-28205",
+    storageBucket: "mychat-28205.firebasestorage.app",
+    messagingSenderId: "522121848657",
+    appId: "1:522121848657:web:7108993439310bf6da5570"
+};
+firebase.initializeApp(fbConfig);
+const db = firebase.database();
+
+const admins = ["44", "bboy2014", "bartelsfamily5", "hunter"];
+
+// ─────────────────────────────────────────────
+//  AUTH STATE
+// ─────────────────────────────────────────────
+let currentUser = null;
+let isLoginMode = true;
+
+function toggleMode() {
+    isLoginMode = !isLoginMode;
+    document.getElementById('auth-header').innerText      = isLoginMode ? "ClareGame"               : "Sign Up";
+    document.getElementById('toggle-auth-text').innerText = isLoginMode ? "New here? Sign Up"        : "Already have an account? Login";
+}
+
+async function handleLogin() {
+    const u = document.getElementById('username-in').value.trim().toLowerCase();
+    const p = document.getElementById('password-in').value.trim();
+    if (!u || !p) return;
+
+    const snap = await db.ref("users/" + u).once("value");
+    if (isLoginMode) {
+        if (snap.exists() && snap.val().password === p) {
+            if (snap.val().banned) return showBanScreen();
+            launch(u);
+        } else alert("Invalid login.");
+    } else {
+        if (snap.exists()) return alert("Username taken.");
+        await db.ref("users/" + u).set({ password: p, pfp: "", status: "Playing", warned: false, banned: false });
+        launch(u);
+    }
+}
+
+document.getElementById('password-in').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleLogin();
+});
+
+function showBanScreen() {
+    document.getElementById('auth-container').classList.add('hidden');
+    document.getElementById('game-wrapper').classList.add('hidden');
+    document.getElementById('ban-overlay').classList.remove('hidden');
+}
+
+// ─────────────────────────────────────────────
+//  LAUNCH
+// ─────────────────────────────────────────────
+function launch(u) {
+    currentUser = u;
+    document.getElementById('auth-container').classList.add('hidden');
+    document.getElementById('game-wrapper').classList.remove('hidden');
+    document.getElementById('username-tag').innerText = u;
+
+    // sync PFP
+    db.ref("users/" + u + "/pfp").on("value", s => {
+        document.getElementById('my-mini-pfp').src = s.val() || 'https://via.placeholder.com/28';
+    });
+
+    // live ban/warn monitor (same as ClareCool)
+    db.ref("users/" + u).on("value", s => {
+        if (!s.exists()) return;
+        const d = s.val();
+        if (d.banned) { showBanScreen(); return; }
+        if (d.warned === true) {
+            alert("⚠️ ADMIN WARNING: Please follow the rules.");
+            db.ref("users/" + u).update({ warned: false });
+        }
+    });
+
+    initGame();
+    initFirebase();
+}
+
+// ─────────────────────────────────────────────
+//  MODAL SYSTEM (same as ClareCool)
+// ─────────────────────────────────────────────
+function showModal(html) {
+    document.getElementById('modal-content').innerHTML = html +
+        `<button onclick="closeModal()" style="background:var(--primary);width:100%;margin-top:15px;border:none;border-radius:6px;color:white;padding:8px;cursor:pointer;">Close</button>`;
+    document.getElementById('master-modal').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('master-modal').classList.add('hidden'); }
+
+function openControls() {
+    showModal(`
+        <h3>Controls</h3>
+        <div style="text-align:left;font-size:12px;line-height:2;color:#aaa;">
+            <b style="color:white;">WASD</b> — Move<br>
+            <b style="color:white;">Mouse</b> — Look around (click screen to lock)<br>
+            <b style="color:white;">E</b> — Pick up nearby item<br>
+            <b style="color:white;">/</b> — Open chat<br>
+            <b style="color:white;">Enter</b> — Send chat<br>
+            <b style="color:white;">Esc</b> — Close chat / unlock mouse
+        </div>
+    `);
+}
+
+function openMembers() {
+    db.ref("claregame_players").once("value", snap => {
+        let html = `<h3>👥 Online Now</h3>`;
+        if (!snap.exists()) { html += `<p style="color:#666;font-size:12px;">Nobody else is online.</p>`; }
+        snap.forEach(c => {
+            const d = c.val();
+            html += `<div style="text-align:left;padding:6px 0;border-bottom:1px solid #333;font-size:12px;">
+                <b style="color:#a29bfe;">${c.key}</b>
+                ${admins.includes(c.key) ? '<span style="color:var(--primary);font-size:9px;margin-left:4px;">[ADM]</span>' : ''}
+            </div>`;
+        });
+        showModal(html);
+    });
+}
+
+// ─────────────────────────────────────────────
+//  GAME STATE
+// ─────────────────────────────────────────────
+let scene, camera, renderer, clock;
+let otherPlayers  = {};   // username → { mesh, nameEl }
+let worldItemMeshes = {}; // id → mesh
+let pickedUpItems = {};
+let inventory     = [null,null,null,null,null];
+let chatting      = false;
+let yaw = 0, pitch = 0;
+const keys = {};
+
+const PLAYER_SPEED = 6;
+const PLAYER_HEIGHT = 1.0;
+const PICKUP_DIST   = 3.2;
+
+const WORLD_ITEMS = [
+    { id:'i1', emoji:'🍎', name:'Apple',       x:  8, z:  5 },
+    { id:'i2', emoji:'⚔️',  name:'Sword',       x: -6, z:  3 },
+    { id:'i3', emoji:'💎', name:'Diamond',     x: 12, z:-10 },
+    { id:'i4', emoji:'🗝️',  name:'Key',         x: -3, z: 12 },
+    { id:'i5', emoji:'📦', name:'Mystery Box',  x:  0, z: -8 },
+    { id:'i6', emoji:'🍄', name:'Mushroom',    x: 15, z:  2 },
+    { id:'i7', emoji:'🪙', name:'Coin',        x:-12, z: -6 },
+    { id:'i8', emoji:'🎈', name:'Balloon',     x:  4, z: 15 },
+];
+
+const bubbles = {}; // username → { el, timer }
+
+// ─────────────────────────────────────────────
+//  THREE.JS INIT
+// ─────────────────────────────────────────────
+function initGame() {
+    const canvas = document.getElementById('game-canvas');
+    const wrap   = document.getElementById('canvas-wrap');
+
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.setClearColor(0x0f0f1a);
+
+    scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x0f0f1a, 22, 70);
+
+    camera = new THREE.PerspectiveCamera(75, wrap.clientWidth / wrap.clientHeight, 0.1, 200);
+    camera.position.set(0, PLAYER_HEIGHT, 0);
+    camera.rotation.order = 'YXZ';
+
+    clock = new THREE.Clock();
+
+    buildWorld();
+    spawnWorldItems();
+    setupInput();
+    animate();
+
+    window.addEventListener('resize', () => {
+        const w = wrap.clientWidth, h = wrap.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    });
+}
+
+// ─────────────────────────────────────────────
+//  WORLD
+// ─────────────────────────────────────────────
+function buildWorld() {
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(120, 120);
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x12122a });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Grid
+    const grid = new THREE.GridHelper(120, 60, 0x4834d4, 0x1e1e35);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x4834d4, 0.4));
+    const dLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dLight.position.set(10, 20, 10);
+    scene.add(dLight);
+    const pLight = new THREE.PointLight(0x4834d4, 2, 40);
+    pLight.position.set(0, 8, 0);
+    scene.add(pLight);
+
+    // Decorative obstacle blocks
+    const spots = [
+        [8,1,8], [-8,1,8], [8,1,-8], [-8,1,-8],
+        [0,1,15], [15,1,0], [0,1,-15], [-15,1,0],
+        [12,2,4], [-12,2,-4], [5,0.5,-12], [-5,0.5,12]
+    ];
+    spots.forEach(([x,y,z]) => {
+        const h = y * 2;
+        const geo = new THREE.BoxGeometry(2, h, 2);
+        const mat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x, h / 2, z);
+        mesh.castShadow = true;
+        scene.add(mesh);
+        const edges = new THREE.EdgesGeometry(geo);
+        const line  = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x4834d4, transparent: true, opacity: 0.5 }));
+        mesh.add(line);
+    });
+}
+
+function makePlayerMesh(hexColor) {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: hexColor });
+
+    // Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8,1.0,0.8), mat);
+    body.position.y = 0.5;
+    group.add(body);
+    group.add(edged(new THREE.BoxGeometry(0.8,1.0,0.8), hexColor, [0,0.5,0]));
+
+    // Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.65,0.65,0.65), mat);
+    head.position.y = 1.32;
+    group.add(head);
+    group.add(edged(new THREE.BoxGeometry(0.65,0.65,0.65), hexColor, [0,1.32,0]));
+
+    // Eyes
+    [-0.15, 0.15].forEach(ex => {
+        const eye = new THREE.Mesh(
+            new THREE.BoxGeometry(0.1,0.08,0.05),
+            new THREE.MeshBasicMaterial({ color: 0x000000 })
+        );
+        eye.position.set(ex, 1.36, -0.33);
+        group.add(eye);
+    });
+
+    return group;
+}
+
+function edged(geo, color, pos) {
+    const e = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color })
+    );
+    e.position.set(...pos);
+    return e;
+}
+
+function spawnWorldItems() {
+    WORLD_ITEMS.forEach(item => {
+        const geo  = new THREE.BoxGeometry(0.5,0.5,0.5);
+        const mat  = new THREE.MeshLambertMaterial({ color: 0xffd700, emissive: 0xff8800, emissiveIntensity: 0.4 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(item.x, 0.4, item.z);
+        mesh.userData = item;
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffff00 })));
+        scene.add(mesh);
+        worldItemMeshes[item.id] = mesh;
+    });
+}
+
+// ─────────────────────────────────────────────
+//  INPUT
+// ─────────────────────────────────────────────
+function setupInput() {
+    document.addEventListener('keydown', e => {
+        if (chatting) return;
+        keys[e.key.toLowerCase()] = true;
+        if (e.key === '/') { e.preventDefault(); openChat(); }
+        if (e.key.toLowerCase() === 'e') tryPickup();
+        if (e.key === 'Escape') document.exitPointerLock();
+    });
+    document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+    const canvas = document.getElementById('game-canvas');
+    canvas.addEventListener('click', () => { if (!chatting) canvas.requestPointerLock(); });
+    document.addEventListener('mousemove', e => {
+        if (document.pointerLockElement !== canvas || chatting) return;
+        yaw   -= e.movementX * 0.002;
+        pitch -= e.movementY * 0.002;
+        pitch  = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, pitch));
+    });
+}
+
+// ─────────────────────────────────────────────
+//  CHAT
+// ─────────────────────────────────────────────
+function openChat() {
+    chatting = true;
+    document.exitPointerLock();
+    const wrap = document.getElementById('chat-input-wrap');
+    const inp  = document.getElementById('chat-in');
+    wrap.style.display = 'block';
+    inp.value = '';
+    setTimeout(() => inp.focus(), 50);
+
+    inp.onkeydown = e => {
+        if (e.key === 'Enter') {
+            const txt = inp.value.trim();
+            if (txt) db.ref("claregame_chat").push({ username: currentUser, text: txt, time: Date.now() });
+            closeChat();
+        }
+        if (e.key === 'Escape') closeChat();
+    };
+}
+
+function closeChat() {
+    chatting = false;
+    document.getElementById('chat-input-wrap').style.display = 'none';
+    document.getElementById('chat-in').value = '';
+}
+
+// ─────────────────────────────────────────────
+//  PICKUP
+// ─────────────────────────────────────────────
+function tryPickup() {
+    const px = camera.position.x, pz = camera.position.z;
+    for (const item of WORLD_ITEMS) {
+        if (pickedUpItems[item.id]) continue;
+        const dx = item.x - px, dz = item.z - pz;
+        if (Math.sqrt(dx*dx + dz*dz) < PICKUP_DIST) {
+            const slot = inventory.indexOf(null);
+            if (slot === -1) { showNotif("Inventory full!"); return; }
+            inventory[slot] = item;
+            updateInventoryUI();
+            db.ref("claregame_items/" + item.id).set({ pickedBy: currentUser, time: Date.now() });
+            removeWorldItem(item.id);
+            pickedUpItems[item.id] = true;
+            showNotif(`Picked up ${item.emoji} ${item.name}!`);
+            db.ref("claregame_chat").push({
+                username: "SYSTEM", text: `${currentUser} picked up ${item.emoji} ${item.name}`, time: Date.now()
+            });
+            return;
+        }
+    }
+}
+
+function removeWorldItem(id) {
+    if (worldItemMeshes[id]) { scene.remove(worldItemMeshes[id]); delete worldItemMeshes[id]; }
+}
+
+function updateInventoryUI() {
+    for (let i = 0; i < 5; i++) {
+        const s = document.getElementById('slot-' + i);
+        s.innerText = inventory[i] ? inventory[i].emoji : '';
+        s.title     = inventory[i] ? inventory[i].name  : '';
+    }
+}
+
+// ─────────────────────────────────────────────
+//  FIREBASE LISTENERS
+// ─────────────────────────────────────────────
+function initFirebase() {
+    // Chat
+    db.ref("claregame_chat").limitToLast(25).on("value", snap => {
+        const panel = document.getElementById('chat-log');
+        panel.innerHTML = '';
+        snap.forEach(c => {
+            const d = c.val();
+            const div = document.createElement('div');
+            div.className = 'chat-line';
+            const isSys = d.username === 'SYSTEM';
+            div.innerHTML = `<span class="cname ${isSys ? 'sys' : ''}">${d.username}</span>${d.text}`;
+            panel.appendChild(div);
+        });
+        panel.scrollTop = panel.scrollHeight;
+
+        // Trigger speech bubbles for very recent messages
+        snap.forEach(c => {
+            const d = c.val();
+            if (!isSys(d.username) && Date.now() - d.time < 5000) showBubble(d.username, d.text);
+        });
+    });
+
+    // Other players
+    db.ref("claregame_players").on("value", snap => {
+        const alive = {};
+        snap.forEach(c => {
+            const u = c.key;
+            if (u === currentUser) return;
+            alive[u] = true;
+            const d = c.val();
+            if (!otherPlayers[u]) {
+                const hue   = Math.abs(hashCode(u)) % 360;
+                const color = new THREE.Color(`hsl(${hue},70%,55%)`);
+                const mesh  = makePlayerMesh(color.getHex());
+                scene.add(mesh);
+                otherPlayers[u] = { mesh, nameEl: null };
+            }
+            otherPlayers[u].mesh.position.set(d.x, 0, d.z);
+            otherPlayers[u].mesh.rotation.y = d.yaw || 0;
+        });
+        Object.keys(otherPlayers).forEach(u => {
+            if (!alive[u]) {
+                scene.remove(otherPlayers[u].mesh);
+                if (otherPlayers[u].nameEl) otherPlayers[u].nameEl.remove();
+                delete otherPlayers[u];
+            }
+        });
+    });
+
+    // Items picked up by others
+    db.ref("claregame_items").on("value", snap => {
+        snap.forEach(c => {
+            const id = c.key;
+            if (!pickedUpItems[id]) { pickedUpItems[id] = true; removeWorldItem(id); }
+        });
+    });
+
+    // Broadcast own position
+    setInterval(() => {
+        if (!currentUser || !camera) return;
+        db.ref("claregame_players/" + currentUser).set({
+            x: +camera.position.x.toFixed(2),
+            z: +camera.position.z.toFixed(2),
+            yaw: +yaw.toFixed(3),
+            t: Date.now()
+        });
+    }, 100);
+
+    db.ref("claregame_players/" + currentUser).onDisconnect().remove();
+}
+
+function isSys(u) { return u === 'SYSTEM'; }
+
+// ─────────────────────────────────────────────
+//  SPEECH BUBBLES
+// ─────────────────────────────────────────────
+function showBubble(username, text) {
+    if (bubbles[username]) {
+        clearTimeout(bubbles[username].timer);
+        bubbles[username].el.innerText = text;
+    } else {
+        const el = document.createElement('div');
+        el.className = 'overhead-bubble';
+        el.innerText = text;
+        document.body.appendChild(el);
+        bubbles[username] = { el };
+    }
+    bubbles[username].timer = setTimeout(() => {
+        if (bubbles[username]) { bubbles[username].el.remove(); delete bubbles[username]; }
+    }, 5000);
+}
+
+// ─────────────────────────────────────────────
+//  GAME LOOP
+// ─────────────────────────────────────────────
+const _v3 = new THREE.Vector3();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    if (!chatting) movePlayer(dt);
+
+    // Item bob + spin
+    const t = Date.now() * 0.001;
+    Object.values(worldItemMeshes).forEach(m => {
+        m.position.y  = 0.35 + Math.sin(t * 2 + m.position.x) * 0.13;
+        m.rotation.y += dt * 1.4;
+    });
+
+    // Pickup prompt
+    const near = getNearItem();
+    const pp   = document.getElementById('pickup-prompt');
+    pp.style.display = near ? 'block' : 'none';
+    if (near) pp.innerText = `[ E ] pick up ${near.emoji} ${near.name}`;
+
+    // Overhead name tags + bubbles
+    updateOverheads();
+
+    renderer.render(scene, camera);
+}
+
+function movePlayer(dt) {
+    const dir = new THREE.Vector3();
+    if (keys['w'] || keys['arrowup'])    dir.z -= 1;
+    if (keys['s'] || keys['arrowdown'])  dir.z += 1;
+    if (keys['a'] || keys['arrowleft'])  dir.x -= 1;
+    if (keys['d'] || keys['arrowright']) dir.x += 1;
+    if (dir.lengthSq() > 0) {
+        dir.normalize().applyEuler(new THREE.Euler(0, yaw, 0));
+        camera.position.x = Math.max(-48, Math.min(48, camera.position.x + dir.x * PLAYER_SPEED * dt));
+        camera.position.z = Math.max(-48, Math.min(48, camera.position.z + dir.z * PLAYER_SPEED * dt));
+    }
+    camera.position.y = PLAYER_HEIGHT;
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+}
+
+function getNearItem() {
+    const px = camera.position.x, pz = camera.position.z;
+    for (const item of WORLD_ITEMS) {
+        if (pickedUpItems[item.id]) continue;
+        const dx = item.x - px, dz = item.z - pz;
+        if (Math.sqrt(dx*dx + dz*dz) < PICKUP_DIST) return item;
+    }
+    return null;
+}
+
+function updateOverheads() {
+    Object.entries(otherPlayers).forEach(([u, op]) => {
+        // Name tag
+        _v3.set(op.mesh.position.x, op.mesh.position.y + 2.1, op.mesh.position.z);
+        const sc = toScreen(_v3);
+        if (!op.nameEl) {
+            const el = document.createElement('div');
+            el.className = 'overhead-name';
+            el.innerText = u;
+            document.body.appendChild(el);
+            op.nameEl = el;
+        }
+        if (sc) {
+            op.nameEl.style.display = 'block';
+            op.nameEl.style.left    = sc.x + 'px';
+            op.nameEl.style.top     = sc.y + 'px';
+        } else {
+            op.nameEl.style.display = 'none';
+        }
+
+        // Speech bubble
+        if (bubbles[u]) {
+            _v3.set(op.mesh.position.x, op.mesh.position.y + 2.9, op.mesh.position.z);
+            const bs = toScreen(_v3);
+            if (bs) {
+                bubbles[u].el.style.display = 'block';
+                bubbles[u].el.style.left    = bs.x + 'px';
+                bubbles[u].el.style.top     = bs.y + 'px';
+            } else {
+                bubbles[u].el.style.display = 'none';
+            }
+        }
+    });
+}
+
+function toScreen(pos) {
+    const v = pos.clone().project(camera);
+    if (v.z > 1) return null;
+    return {
+        x: (v.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-v.y * 0.5 + 0.5) * window.innerHeight
+    };
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function showNotif(msg) {
+    const el = document.getElementById('notif');
+    el.innerText = msg; el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 2500);
+}
+
+function hashCode(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+    return h;
+}
+
+window.addEventListener('beforeunload', () => {
+    if (currentUser) db.ref("claregame_players/" + currentUser).remove();
+});
+</script>
+</body>
+</html>
