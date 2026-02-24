@@ -307,7 +307,7 @@ function buildItemMesh(defKey){
         new THREE.Vector3(0,-.35,0),new THREE.Vector3(.22,0,0),new THREE.Vector3(0,.35,0)
       );
       const pts=curve.getPoints(16);
-      const bowGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),.03,.015,6,false);
+      const bowGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),20,.015,6,false);
       const bow=new THREE.Mesh(bowGeo,makeMat(0x8b5e3c));
       // string
       const strGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-.32,0),new THREE.Vector3(0,.32,0)]);
@@ -354,7 +354,7 @@ function buildItemMesh(defKey){
       const curve=new THREE.QuadraticBezierCurve3(
         new THREE.Vector3(-.06,-.2,0),new THREE.Vector3(.1,0,0),new THREE.Vector3(-.04,.2,0)
       );
-      const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(curve.getPoints(12)),.04,.03,6,false);
+      const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(curve.getPoints(12)),16,.04,6,false);
       const body=new THREE.Mesh(geo,makeMat(0xffdd00,0xcc9900,.05));
       const tipA=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),makeMat(0xbb8800));
       tipA.position.set(-.04,-.22,0);
@@ -599,10 +599,12 @@ function spawnAllItems(){SPAWN_TABLE.forEach(s=>{if(!pickedUpItems[s.id]) spawnI
 
 function spawnItemMesh(id,defKey,x,z){
   if(worldItemMeshes[id]) return;
-  const mesh=buildItemMesh(defKey);
-  mesh.position.set(x,.5,z);
-  mesh.userData={id,defKey,x,z};
-  scene.add(mesh); worldItemMeshes[id]=mesh;
+  try{
+    const mesh=buildItemMesh(defKey);
+    mesh.position.set(x,.5,z);
+    mesh.userData={id,defKey,x,z};
+    scene.add(mesh); worldItemMeshes[id]=mesh;
+  }catch(e){console.error('spawnItemMesh failed for',defKey,e);}
 }
 
 function removeWorldItem(id){if(worldItemMeshes[id]){scene.remove(worldItemMeshes[id]);delete worldItemMeshes[id];}}
