@@ -1,1444 +1,1306 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClareGame</title>
-    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <style>
-        :root {
-            --bg-color: #0f0f1a; --chat-bg: #1a1a2d;
-            --primary: #4834d4; --danger: #eb4d4b; --text-white: #ffffff;
-        }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Inter',sans-serif; background:var(--bg-color); color:var(--text-white); overflow:hidden; height:100vh; width:100vw; }
-        .hidden { display:none !important; }
-
-        #ban-overlay { position:fixed; inset:0; background:#000; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
-
-        #auth-container { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg-color); z-index:100; }
-        .auth-box { background:var(--chat-bg); padding:30px; border-radius:15px; width:280px; text-align:center; border:1px solid var(--primary); }
-        .auth-box h2 { color:var(--primary); margin:0 0 15px 0; font-size:24px; }
-        .auth-box input { display:block; width:100%; box-sizing:border-box; background:#0f0f1a; border:1px solid #333; color:white; border-radius:8px; padding:10px; font-size:12px; outline:none; margin-bottom:10px; }
-        .auth-box input:focus { border-color:var(--primary); }
-        .auth-box button { width:100%; padding:12px; background:var(--primary); border:none; border-radius:8px; color:white; font-weight:bold; margin-top:10px; cursor:pointer; }
-        .auth-box .toggle { cursor:pointer; color:#888; font-size:11px; margin-top:15px; }
-        .auth-box .toggle:hover { color:var(--primary); }
-
-        #game-wrapper { width:100%; height:100vh; display:flex; flex-direction:column; }
-        #top-bar { padding:6px 12px; background:rgba(26,26,45,0.97); border-bottom:2px solid var(--primary); display:flex; align-items:center; justify-content:space-between; gap:5px; z-index:50; position:relative; flex-shrink:0; }
-        .btn-group { display:flex; align-items:center; gap:4px; overflow-x:auto; scrollbar-width:none; flex:1; }
-        .btn-group::-webkit-scrollbar { display:none; }
-        .icon-btn { background:#2f3542; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer; height:26px; flex-shrink:0; transition:transform 0.1s; white-space:nowrap; }
-        .icon-btn:active { transform:scale(0.9); }
-        .exit-btn { background:#444; color:white; border:none; border-radius:4px; padding:4px 10px; font-size:10px; cursor:pointer; height:26px; }
-        .pfp-circle { width:28px; height:28px; border-radius:50%; border:1px solid var(--primary); cursor:pointer; object-fit:cover; flex-shrink:0; }
-        #username-tag { font-size:11px; color:#a29bfe; font-weight:600; white-space:nowrap; }
-
-        #canvas-wrap { flex:1; position:relative; overflow:hidden; }
-        #game-canvas { display:block; width:100%; height:100%; }
-
-        #hud { position:absolute; inset:0; pointer-events:none; }
-        #crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:16px; height:16px; }
-        #crosshair::before,#crosshair::after { content:''; position:absolute; background:rgba(255,255,255,0.7); }
-        #crosshair::before { width:2px; height:100%; left:50%; transform:translateX(-50%); }
-        #crosshair::after  { height:2px; width:100%; top:50%; transform:translateY(-50%); }
-
-        #pickup-prompt { position:absolute; top:56%; left:50%; transform:translateX(-50%); background:rgba(26,26,45,0.85); border:1px solid var(--primary); padding:5px 14px; font-size:12px; color:#a29bfe; display:none; border-radius:6px; }
-        #controls-hint { position:absolute; bottom:80px; left:14px; font-size:10px; color:rgba(162,155,254,0.5); line-height:2; }
-        #notif { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(26,26,45,0.92); border:1px solid var(--primary); padding:5px 18px; font-size:12px; color:#a29bfe; border-radius:6px; display:none; white-space:nowrap; z-index:10; }
-
-        #health-bar { position:absolute; top:12px; right:14px; background:rgba(26,26,45,0.9); border:1px solid var(--primary); border-radius:8px; padding:6px 12px; font-size:12px; display:none; min-width:120px; }
-        #hp-fill-wrap { width:100px; height:8px; background:#222; border-radius:4px; margin-top:4px; overflow:hidden; }
-        #hp-fill { height:100%; background:var(--primary); border-radius:4px; transition:width 0.3s, background 0.3s; width:100%; }
-
-        #pvp-indicator { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(235,77,75,0.15); border:1px solid #eb4d4b; border-radius:6px; padding:4px 14px; font-size:11px; color:#eb4d4b; display:none; }
-        #status-effects { position:absolute; top:50px; right:14px; display:flex; flex-direction:column; gap:4px; font-size:10px; }
-        .status-tag { background:rgba(26,26,45,0.9); border:1px solid #555; border-radius:4px; padding:2px 8px; }
-
-        #inventory { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:5px; pointer-events:all; }
-        .inv-slot { width:48px; height:48px; border:1px solid rgba(72,52,212,0.4); background:rgba(26,26,45,0.85); display:flex; align-items:center; justify-content:center; font-size:22px; border-radius:6px; cursor:pointer; position:relative; flex-direction:column; }
-        .inv-slot.active { border-color:var(--primary); box-shadow:0 0 8px rgba(72,52,212,0.5); }
-        .inv-slot .slot-label { font-size:7px; color:#666; position:absolute; bottom:2px; }
-
-        #chat-log { position:absolute; bottom:80px; right:14px; width:270px; max-height:180px; display:flex; flex-direction:column; gap:4px; overflow:hidden; pointer-events:none; }
-        .chat-line { background:rgba(26,26,45,0.88); border-left:2px solid var(--primary); padding:4px 8px; font-size:11px; border-radius:0 6px 6px 0; word-break:break-word; animation:slideIn 0.15s ease; }
-        .chat-line .cname { color:#a29bfe; font-weight:600; margin-right:4px; }
-        .chat-line .cname.sys { color:#2ed573; }
-        @keyframes slideIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-
-        #chat-input-wrap { position:absolute; bottom:20px; right:14px; width:270px; display:none; pointer-events:all; z-index:10; }
-        #chat-input-wrap input { width:100%; background:#0f0f1a; border:1px solid var(--primary); color:white; border-radius:8px; padding:8px 12px; font-size:12px; outline:none; font-family:inherit; }
-        #chat-input-wrap .chint { font-size:9px; color:#555; margin-top:3px; text-align:right; }
-
-        .overhead-name { position:fixed; pointer-events:none; background:rgba(26,26,45,0.9); border:1px solid var(--primary); color:#a29bfe; font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px; transform:translateX(-50%); white-space:nowrap; font-family:'Inter',sans-serif; }
-        .overhead-bubble { position:fixed; pointer-events:none; background:rgba(26,26,45,0.92); border:1px solid var(--primary); color:white; font-size:11px; padding:4px 9px; border-radius:8px; transform:translateX(-50%); max-width:180px; word-break:break-word; text-align:center; font-family:'Inter',sans-serif; }
-        .overhead-hp { position:fixed; pointer-events:none; transform:translateX(-50%); }
-        .overhead-hp-bar { width:50px; height:4px; background:#333; border-radius:2px; overflow:hidden; }
-        .overhead-hp-fill { height:100%; background:#2ed573; border-radius:2px; transition:width 0.3s; }
-
-        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:1000; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
-        .modal-box { background:var(--chat-bg); padding:25px; border-radius:15px; width:280px; text-align:center; border:1px solid var(--primary); box-shadow:0 0 20px rgba(72,52,212,0.3); max-height:80vh; overflow-y:auto; }
-        .modal-box h3 { margin-bottom:12px; color:var(--primary); }
-
-        @keyframes glow { 0%,100%{box-shadow:0 0 10px gold,0 0 30px gold} 50%{box-shadow:0 0 20px gold,0 0 60px gold} }
-        .golden { animation:glow 1s infinite; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClareGame</title>
+<script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--bg:#0f0f1a;--panel:#1a1a2d;--primary:#4834d4;--danger:#eb4d4b;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:#fff;overflow:hidden;height:100vh;width:100vw;}
+.hidden{display:none!important;}
+#ban-overlay{position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+#auth-container{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:100;}
+.auth-box{background:var(--panel);padding:30px;border-radius:15px;width:280px;text-align:center;border:1px solid var(--primary);}
+.auth-box h2{color:var(--primary);margin:0 0 15px 0;font-size:24px;}
+.auth-box input{display:block;width:100%;box-sizing:border-box;background:#0f0f1a;border:1px solid #333;color:white;border-radius:8px;padding:10px;font-size:12px;outline:none;margin-bottom:10px;}
+.auth-box input:focus{border-color:var(--primary);}
+.auth-box button{width:100%;padding:12px;background:var(--primary);border:none;border-radius:8px;color:white;font-weight:bold;margin-top:10px;cursor:pointer;}
+.auth-box .toggle{cursor:pointer;color:#888;font-size:11px;margin-top:15px;}
+#game-wrapper{width:100%;height:100vh;display:flex;flex-direction:column;}
+#top-bar{padding:6px 12px;background:rgba(26,26,45,0.97);border-bottom:2px solid var(--primary);display:flex;align-items:center;justify-content:space-between;gap:5px;z-index:50;flex-shrink:0;}
+.btn-group{display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none;flex:1;}
+.btn-group::-webkit-scrollbar{display:none;}
+.icon-btn{background:#2f3542;color:white;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;height:26px;flex-shrink:0;transition:transform .1s;white-space:nowrap;}
+.icon-btn:active{transform:scale(.9);}
+.exit-btn{background:#444;color:white;border:none;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer;height:26px;}
+.pfp-circle{width:28px;height:28px;border-radius:50%;border:1px solid var(--primary);cursor:pointer;object-fit:cover;flex-shrink:0;}
+#username-tag{font-size:11px;color:#a29bfe;font-weight:600;white-space:nowrap;}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;}
+#game-canvas{display:block;width:100%;height:100%;}
+#hud{position:absolute;inset:0;pointer-events:none;}
+#crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:16px;height:16px;}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.7);}
+#crosshair::before{width:2px;height:100%;left:50%;transform:translateX(-50%);}
+#crosshair::after{height:2px;width:100%;top:50%;transform:translateY(-50%);}
+#pickup-prompt{position:absolute;top:57%;left:50%;transform:translateX(-50%);background:rgba(26,26,45,.88);border:1px solid var(--primary);padding:5px 14px;font-size:12px;color:#a29bfe;display:none;border-radius:6px;}
+#notif{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(26,26,45,.95);border:1px solid var(--primary);padding:5px 18px;font-size:12px;color:#a29bfe;border-radius:6px;display:none;white-space:nowrap;z-index:10;}
+#health-bar{position:absolute;top:12px;right:14px;background:rgba(26,26,45,.9);border:1px solid var(--primary);border-radius:8px;padding:6px 12px;font-size:12px;display:none;min-width:130px;}
+#hp-fill-wrap{width:100px;height:8px;background:#222;border-radius:4px;margin-top:4px;overflow:hidden;}
+#hp-fill{height:100%;background:var(--primary);border-radius:4px;transition:width .3s,background .3s;width:100%;}
+#pvp-indicator{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(235,77,75,.15);border:1px solid #eb4d4b;border-radius:6px;padding:4px 14px;font-size:11px;color:#eb4d4b;display:none;}
+#status-effects{position:absolute;top:52px;right:14px;display:flex;flex-direction:column;gap:4px;font-size:10px;}
+.status-tag{background:rgba(26,26,45,.9);border:1px solid #555;border-radius:4px;padding:2px 8px;}
+#controls-hint{position:absolute;bottom:80px;left:14px;font-size:10px;color:rgba(162,155,254,.45);line-height:2;}
+#inventory{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:5px;pointer-events:all;}
+.inv-slot{width:52px;height:52px;border:1px solid rgba(72,52,212,.4);background:rgba(26,26,45,.85);display:flex;align-items:center;justify-content:center;font-size:20px;border-radius:6px;cursor:pointer;position:relative;}
+.inv-slot.active{border-color:var(--primary);box-shadow:0 0 8px rgba(72,52,212,.5);}
+.inv-slot .sn{font-size:7px;color:#555;position:absolute;bottom:2px;right:4px;}
+.inv-slot .si{font-size:8px;color:#888;position:absolute;top:2px;left:3px;}
+#chat-log{position:absolute;bottom:80px;right:14px;width:270px;max-height:180px;display:flex;flex-direction:column;gap:4px;overflow:hidden;pointer-events:none;}
+.chat-line{background:rgba(26,26,45,.88);border-left:2px solid var(--primary);padding:4px 8px;font-size:11px;border-radius:0 6px 6px 0;word-break:break-word;animation:sli .15s ease;}
+.chat-line .cn{color:#a29bfe;font-weight:600;margin-right:4px;}
+.chat-line .sys{color:#2ed573;}
+@keyframes sli{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+#chat-input-wrap{position:absolute;bottom:20px;right:14px;width:270px;display:none;pointer-events:all;z-index:10;}
+#chat-input-wrap input{width:100%;background:#0f0f1a;border:1px solid var(--primary);color:white;border-radius:8px;padding:8px 12px;font-size:12px;outline:none;font-family:inherit;}
+#chat-input-wrap .chint{font-size:9px;color:#555;margin-top:3px;text-align:right;}
+.oh-name{position:fixed;pointer-events:none;background:rgba(26,26,45,.9);border:1px solid var(--primary);color:#a29bfe;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;transform:translateX(-50%);white-space:nowrap;font-family:'Inter',sans-serif;}
+.oh-bubble{position:fixed;pointer-events:none;background:rgba(26,26,45,.92);border:1px solid var(--primary);color:white;font-size:11px;padding:4px 9px;border-radius:8px;transform:translateX(-50%);max-width:180px;word-break:break-word;text-align:center;font-family:'Inter',sans-serif;}
+.oh-hp{position:fixed;pointer-events:none;transform:translateX(-50%);}
+.oh-hp-bar{width:50px;height:4px;background:#333;border-radius:2px;overflow:hidden;}
+.oh-hp-fill{height:100%;background:#2ed573;border-radius:2px;transition:width .3s;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(5px);}
+.modal-box{background:var(--panel);padding:25px;border-radius:15px;width:290px;text-align:center;border:1px solid var(--primary);box-shadow:0 0 20px rgba(72,52,212,.3);max-height:80vh;overflow-y:auto;}
+.modal-box h3{margin-bottom:12px;color:var(--primary);}
+@keyframes glow{0%,100%{filter:drop-shadow(0 0 6px gold)}50%{filter:drop-shadow(0 0 16px gold)}}
+.golden-slot{animation:glow 1s infinite;}
+</style>
 </head>
 <body>
 
 <div id="ban-overlay" class="hidden">
-    <h1 style="color:var(--danger);font-size:40px;">BANNED</h1>
-    <p>Your access to ClareGame has been revoked.</p>
+  <h1 style="color:var(--danger);font-size:40px;">BANNED</h1>
+  <p>Your access to ClareGame has been revoked.</p>
 </div>
 
 <div id="auth-container">
-    <div class="auth-box">
-        <h2 id="auth-header">ClareGame</h2>
-        <input type="text" id="username-in" placeholder="Username">
-        <input type="password" id="password-in" placeholder="Password">
-        <button onclick="handleLogin()">Login</button>
-        <p class="toggle" id="toggle-auth-text" onclick="toggleMode()">New here? Sign Up</p>
-    </div>
+  <div class="auth-box">
+    <h2 id="auth-header">ClareGame</h2>
+    <input type="text" id="username-in" placeholder="Username">
+    <input type="password" id="password-in" placeholder="Password">
+    <button onclick="handleLogin()">Login</button>
+    <p class="toggle" id="toggle-auth-text" onclick="toggleMode()">New here? Sign Up</p>
+  </div>
 </div>
 
 <div id="game-wrapper" class="hidden">
-    <div id="top-bar">
-        <div class="btn-group">
-            <img id="my-mini-pfp" class="pfp-circle" src="https://via.placeholder.com/28">
-            <span id="username-tag"></span>
-            <button class="icon-btn" onclick="openControls()">❓</button>
-            <button class="icon-btn" onclick="openMembers()">👥</button>
-            <button id="pvp-btn" class="icon-btn" onclick="togglePVP()" style="background:#2f3542;">⚔️ PVP: OFF</button>
-            <button id="reset-btn" class="icon-btn hidden" onclick="resetAllItems()" style="background:#eb4d4b;">🔄 Reset Items</button>
-        </div>
-        <button class="exit-btn" onclick="location.reload()">Exit</button>
+  <div id="top-bar">
+    <div class="btn-group">
+      <img id="my-mini-pfp" class="pfp-circle" src="https://via.placeholder.com/28">
+      <span id="username-tag"></span>
+      <button class="icon-btn" onclick="openControls()">❓</button>
+      <button class="icon-btn" onclick="openMembers()">👥</button>
+      <button id="pvp-btn" class="icon-btn" onclick="togglePVP()" style="background:#2f3542;">⚔️ PVP: OFF</button>
+      <button id="reset-btn" class="icon-btn hidden" onclick="resetAllItems()" style="background:#eb4d4b;">🔄 Reset</button>
     </div>
-
-    <div id="canvas-wrap">
-        <canvas id="game-canvas"></canvas>
-        <div id="hud">
-            <div id="crosshair"></div>
-            <div id="pickup-prompt"></div>
-            <div id="notif"></div>
-            <div id="pvp-indicator">⚔️ PVP MODE — F to attack · flail swings on flick</div>
-            <div id="health-bar">
-                ❤️ <span id="hp-val">100</span>/100
-                <div id="hp-fill-wrap"><div id="hp-fill"></div></div>
-            </div>
-            <div id="status-effects"></div>
-            <div id="controls-hint">
-                WASD · move<br>
-                MOUSE · look (click to lock)<br>
-                E · pick up<br>
-                Q · drop selected<br>
-                F · attack / 3rd person toggle (no weapon)<br>
-                1-5 · select slot<br>
-                / · chat
-            </div>
-            <div id="inventory">
-                <div class="inv-slot active" id="slot-0" onclick="selectSlot(0)"><span class="slot-label">1</span></div>
-                <div class="inv-slot" id="slot-1" onclick="selectSlot(1)"><span class="slot-label">2</span></div>
-                <div class="inv-slot" id="slot-2" onclick="selectSlot(2)"><span class="slot-label">3</span></div>
-                <div class="inv-slot" id="slot-3" onclick="selectSlot(3)"><span class="slot-label">4</span></div>
-                <div class="inv-slot" id="slot-4" onclick="selectSlot(4)"><span class="slot-label">5</span></div>
-            </div>
-        </div>
-        <div id="chat-log"></div>
-        <div id="chat-input-wrap">
-            <input type="text" id="chat-in" placeholder="Say something..." maxlength="120">
-            <div class="chint">ENTER to send · ESC to cancel</div>
-        </div>
+    <button class="exit-btn" onclick="location.reload()">Exit</button>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="game-canvas"></canvas>
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="pickup-prompt"></div>
+      <div id="notif"></div>
+      <div id="pvp-indicator">⚔️ PVP ON — F to attack · Flail: flick mouse</div>
+      <div id="health-bar">❤️ <span id="hp-val">100</span>/100<div id="hp-fill-wrap"><div id="hp-fill"></div></div></div>
+      <div id="status-effects"></div>
+      <div id="controls-hint">
+        WASD · move<br>
+        Mouse · look (click to lock)<br>
+        E · pick up<br>
+        Q · drop selected<br>
+        F · use/attack/place trap<br>
+        P · toggle perspective<br>
+        1–5 · select slot<br>
+        / · chat
+      </div>
+      <div id="inventory">
+        <div class="inv-slot active" id="slot-0" onclick="selectSlot(0)"><span class="sn">1</span></div>
+        <div class="inv-slot" id="slot-1" onclick="selectSlot(1)"><span class="sn">2</span></div>
+        <div class="inv-slot" id="slot-2" onclick="selectSlot(2)"><span class="sn">3</span></div>
+        <div class="inv-slot" id="slot-3" onclick="selectSlot(3)"><span class="sn">4</span></div>
+        <div class="inv-slot" id="slot-4" onclick="selectSlot(4)"><span class="sn">5</span></div>
+      </div>
     </div>
+    <div id="chat-log"></div>
+    <div id="chat-input-wrap">
+      <input type="text" id="chat-in" placeholder="Say something..." maxlength="120">
+      <div class="chint">ENTER send · ESC cancel</div>
+    </div>
+  </div>
 </div>
 
 <div id="master-modal" class="modal-overlay hidden">
-    <div class="modal-box" id="modal-content"></div>
+  <div class="modal-box" id="modal-content"></div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  FIREBASE
-// ═══════════════════════════════════════════
-const fbConfig = {
-    apiKey:"AIzaSyB9Rlvq49-AiLBzMDvjz71QCTT4d6NqE98",
-    authDomain:"mychat-28205.firebaseapp.com",
-    databaseURL:"https://mychat-28205-default-rtdb.firebaseio.com",
-    projectId:"mychat-28205",
-    storageBucket:"mychat-28205.firebasestorage.app",
-    messagingSenderId:"522121848657",
-    appId:"1:522121848657:web:7108993439310bf6da5570"
-};
-firebase.initializeApp(fbConfig);
-const db = firebase.database();
-const admins = ["44","bboy2014","bartelsfamily5","hunter"];
+// ══════════════════════════════════════════════════════
+const fbCfg={apiKey:"AIzaSyB9Rlvq49-AiLBzMDvjz71QCTT4d6NqE98",authDomain:"mychat-28205.firebaseapp.com",databaseURL:"https://mychat-28205-default-rtdb.firebaseio.com",projectId:"mychat-28205",storageBucket:"mychat-28205.firebasestorage.app",messagingSenderId:"522121848657",appId:"1:522121848657:web:7108993439310bf6da5570"};
+firebase.initializeApp(fbCfg);
+const db=firebase.database();
+const admins=["44","bboy2014","bartelsfamily5","hunter"];
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  AUTH
-// ═══════════════════════════════════════════
-let currentUser = null;
-let isLoginMode = true;
+// ══════════════════════════════════════════════════════
+let currentUser=null,isLoginMode=true;
+function toggleMode(){isLoginMode=!isLoginMode;document.getElementById('auth-header').innerText=isLoginMode?"ClareGame":"Sign Up";document.getElementById('toggle-auth-text').innerText=isLoginMode?"New here? Sign Up":"Already have an account? Login";}
+async function handleLogin(){
+  const u=document.getElementById('username-in').value.trim().toLowerCase();
+  const p=document.getElementById('password-in').value.trim();
+  if(!u||!p)return;
+  const snap=await db.ref("users/"+u).once("value");
+  if(isLoginMode){if(snap.exists()&&snap.val().password===p){if(snap.val().banned)return showBanScreen();launch(u);}else alert("Invalid login.");}
+  else{if(snap.exists())return alert("Username taken.");await db.ref("users/"+u).set({password:p,pfp:"",status:"Playing",warned:false,banned:false});launch(u);}
+}
+document.getElementById('password-in').addEventListener('keydown',e=>{if(e.key==='Enter')handleLogin();});
+function showBanScreen(){document.getElementById('auth-container').classList.add('hidden');document.getElementById('game-wrapper').classList.add('hidden');document.getElementById('ban-overlay').classList.remove('hidden');}
 
-function toggleMode() {
-    isLoginMode = !isLoginMode;
-    document.getElementById('auth-header').innerText      = isLoginMode ? "ClareGame" : "Sign Up";
-    document.getElementById('toggle-auth-text').innerText = isLoginMode ? "New here? Sign Up" : "Already have an account? Login";
-}
-async function handleLogin() {
-    const u = document.getElementById('username-in').value.trim().toLowerCase();
-    const p = document.getElementById('password-in').value.trim();
-    if (!u || !p) return;
-    const snap = await db.ref("users/"+u).once("value");
-    if (isLoginMode) {
-        if (snap.exists() && snap.val().password === p) {
-            if (snap.val().banned) return showBanScreen();
-            launch(u);
-        } else alert("Invalid login.");
-    } else {
-        if (snap.exists()) return alert("Username taken.");
-        await db.ref("users/"+u).set({password:p,pfp:"",status:"Playing",warned:false,banned:false});
-        launch(u);
-    }
-}
-document.getElementById('password-in').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
-function showBanScreen() {
-    document.getElementById('auth-container').classList.add('hidden');
-    document.getElementById('game-wrapper').classList.add('hidden');
-    document.getElementById('ban-overlay').classList.remove('hidden');
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  ITEM / WEAPON DEFINITIONS
-// ═══════════════════════════════════════════
-// type: 'weapon' or 'item'
-// For weapons: damage, cooldown (ms), range, special
-// Textures are drawn procedurally on a canvas → THREE texture
-const ITEM_DEFS = {
-    sword:     { type:'weapon', emoji:'⚔️',  color:0xaaaacc, damage:30, cooldown:2000, range:3.5,  special:'slash',   speed:1,    desc:'Standard slash, 2s cooldown' },
-    dagger:    { type:'weapon', emoji:'🗡️',  color:0xddddff, damage:15, cooldown:1000, range:2.5,  special:'poke',    speed:1,    desc:'Fast poke, 1s cooldown' },
-    katana:    { type:'weapon', emoji:'🌀',  color:0xff88aa, damage:20, cooldown:1500, range:3.5,  special:'slash',   speed:1.4,  desc:'Faster movement, 1.5s cooldown' },
-    spear:     { type:'weapon', emoji:'🔱',  color:0xffaa44, damage:10, cooldown:2000, range:6.0,  special:'bleed',   speed:1,    desc:'Long range + 10 bleed over 5s' },
-    flail:     { type:'weapon', emoji:'⚙️',  color:0x886644, damage:40, cooldown:0,    range:4.0,  special:'flail',   speed:0.9,  desc:'Swings! Hit by flicking camera' },
-    bow:       { type:'weapon', emoji:'🏹',  color:0x886633, damage:20, cooldown:3000, range:999,  special:'projectile', projSpeed:12, speed:1, desc:'Slow projectile, 3s cooldown' },
-    crossbow:  { type:'weapon', emoji:'➕',  color:0x664422, damage:25, cooldown:5000, range:999,  special:'projectile', projSpeed:18, speed:1, desc:'Faster projectile, 5s cooldown' },
-    balloon:   { type:'item',   emoji:'🎈',  color:0xff66aa, special:'speed',   value:0,   desc:'Hold for +speed' },
-    apple:     { type:'item',   emoji:'🍎',  color:0xff2222, special:'heal',    value:20,  desc:'Heals 20 HP' },
-    banana:    { type:'item',   emoji:'🍌',  color:0xffdd00, special:'heal',    value:15,  desc:'Heals 15 HP' },
-    chocolate: { type:'item',   emoji:'🍫',  color:0x663311, special:'speed_burst', value:10, desc:'Speed boost 10s' },
-    bear_trap: { type:'item',   emoji:'🪤',  color:0x885533, special:'trap',    value:15,  trapSlow:0.4, trapTime:5000, trapRadius:1.5, trapDuration:60000, desc:'Slows+hurts enemies' },
-    web_trap:  { type:'item',   emoji:'🕸️',  color:0xdddddd, special:'web',     value:0,   trapSlow:0.2, trapTime:99999, trapRadius:2.0, trapDuration:30000, desc:'Slows enemies while on it' },
-    poison_apple:{ type:'item', emoji:'🍏',  color:0x33dd44, special:'poison',  value:10,  desc:'Poisons for 10 dmg' },
-    golden_apple:{ type:'item', emoji:'✨',  color:0xffdd00, special:'golden',  value:100, desc:'Full heal + 5s immunity!' },
+// ══════════════════════════════════════════════════════
+// type: weapon | consumable | trap | passive
+// special: slash|poke|bleed|flail|projectile|heal|speed_burst|poison|golden|speed|trap|web
+const DEFS={
+  sword:      {type:'weapon',    emoji:'⚔️', damage:30,cooldown:2000,range:3.5,special:'slash',  desc:'30dmg slash, 2s CD'},
+  dagger:     {type:'weapon',    emoji:'🗡️', damage:15,cooldown:1000,range:2.5,special:'poke',   desc:'15dmg poke, 1s CD'},
+  katana:     {type:'weapon',    emoji:'🌀', damage:20,cooldown:1500,range:3.5,special:'slash',  speedBonus:1.4, desc:'Faster movement, 20dmg'},
+  spear:      {type:'weapon',    emoji:'🔱', damage:10,cooldown:2000,range:6.0,special:'bleed',  desc:'10+10 bleed over 5s, long range'},
+  flail:      {type:'weapon',    emoji:'⚙️', damage:40,cooldown:0,   range:4.5,special:'flail',  desc:'Swing by flicking mouse'},
+  bow:        {type:'weapon',    emoji:'🏹', damage:20,cooldown:3000,range:999, special:'projectile',projSpeed:10, desc:'Slow projectile, 3s CD'},
+  crossbow:   {type:'weapon',    emoji:'➕', damage:25,cooldown:5000,range:999, special:'projectile',projSpeed:16, desc:'Faster projectile, 5s CD'},
+  balloon:    {type:'passive',   emoji:'🎈', speedBonus:1.3, desc:'Speed boost while held'},
+  apple:      {type:'consumable',emoji:'🍎', special:'heal',  value:20,  desc:'Click F to eat: heals 20hp'},
+  banana:     {type:'consumable',emoji:'🍌', special:'heal',  value:15,  desc:'Click F to eat: heals 15hp'},
+  chocolate:  {type:'consumable',emoji:'🍫', special:'speed_burst',value:10, desc:'Click F: speed boost 10s'},
+  bear_trap:  {type:'trap',      emoji:'🪤', special:'trap',  trapDmg:15,trapSlow:0.4,trapSlowDur:5000,  trapRadius:1.5,trapLife:60000, desc:'F to place — damages+slows enemies'},
+  web_trap:   {type:'trap',      emoji:'🕸️', special:'web',   trapDmg:0, trapSlow:0.25,trapSlowDur:3000, trapRadius:2.0,trapLife:30000, desc:'F to place — slows enemies'},
+  poison_apple:{type:'consumable',emoji:'🍏',special:'poison',value:10,  desc:'F to eat — it\'s poisoned!'},
+  golden_apple:{type:'consumable',emoji:'✨', special:'golden',value:100, desc:'F to eat — full heal + 5s immunity!'},
 };
 
-// Spawn positions for world items (id, defKey, x, z)
-const SPAWN_TABLE = [
-    {id:'w1',def:'sword',    x:8,   z:5  },
-    {id:'w2',def:'dagger',   x:-6,  z:3  },
-    {id:'w3',def:'katana',   x:12,  z:-10},
-    {id:'w4',def:'spear',    x:-3,  z:12 },
-    {id:'w5',def:'flail',    x:0,   z:-8 },
-    {id:'w6',def:'bow',      x:15,  z:2  },
-    {id:'w7',def:'crossbow', x:-12, z:-6 },
-    {id:'c1',def:'balloon',  x:4,   z:15 },
-    {id:'c2',def:'apple',    x:-8,  z:-8 },
-    {id:'c3',def:'banana',   x:10,  z:10 },
-    {id:'c4',def:'chocolate',x:-10, z:6  },
-    {id:'c5',def:'bear_trap',x:6,   z:-6 },
-    {id:'c6',def:'web_trap', x:-4,  z:-14},
-    {id:'c7',def:'poison_apple',x:14,z:-4},
-    {id:'g1',def:'golden_apple',x:0,z:0  },
+// Fixed spawn table
+const SPAWN_TABLE=[
+  {id:'w1',def:'sword',    x:8,  z:5  },{id:'w2',def:'dagger',  x:-6, z:3  },
+  {id:'w3',def:'katana',   x:12, z:-10},{id:'w4',def:'spear',   x:-3, z:12 },
+  {id:'w5',def:'flail',    x:0,  z:-8 },{id:'w6',def:'bow',     x:15, z:2  },
+  {id:'w7',def:'crossbow', x:-12,z:-6 },
+  {id:'c1',def:'balloon',  x:4,  z:15 },{id:'c2',def:'apple',   x:-8, z:-8 },
+  {id:'c3',def:'banana',   x:10, z:10 },{id:'c4',def:'chocolate',x:-10,z:6 },
+  {id:'c5',def:'bear_trap',x:6,  z:-6 },{id:'c6',def:'web_trap', x:-4, z:-14},
+  {id:'c7',def:'poison_apple',x:14,z:-4},{id:'g1',def:'golden_apple',x:0,z:0},
 ];
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  GAME STATE
-// ═══════════════════════════════════════════
-let scene, camera, renderer, clock;
-let thirdPerson = false;
-let selfMesh = null;
-let otherPlayers  = {}; // u → {mesh,nameEl,hpEl,hpFill,hp}
-let worldItemMeshes = {}; // id → mesh
-let pickedUpItems = {};   // id → true
-let inventory     = [null,null,null,null,null];
-let chatting      = false;
-let selectedSlot  = 0;
-let yaw=0, pitch=0, prevYaw=0;
-let pvpMode = false;
-let myHP = 100;
-const MAX_HP = 100;
-const PLAYER_SPEED = 6;
-const PLAYER_HEIGHT = 1.0;
-const PICKUP_DIST = 2.8;
-const MAX_FLOOR_WEAPONS = 20;
-const MAX_FLOOR_ITEMS   = 20;
-const keys = {};
-const bubbles = {};
-const projectiles = []; // {mesh, vel, owner, dmg, weapon, born}
-const trapMeshes  = {}; // id → {mesh, def, owner, born, x, z}
-const statusEffects = {}; // effect → timer
-let lastAttackTime = 0;
-let flailAngle = 0;
-let flailMesh = null;
-let goldenImmune = false;
-let bleedInterval = null;
-let speedMult = 1;
-const _v3 = new THREE.Vector3();
+// ══════════════════════════════════════════════════════
+let scene,camera,renderer,clock;
+let thirdPerson=false;
+let selfMesh=null;          // shown in 3rd person
+let handItemMesh=null;      // item shown in first-person hand (child of camera)
+let otherPlayers={};        // u→{mesh,nameEl,hpEl,hpFill,hp,handMesh}
+let worldItemMeshes={};     // id→mesh
+let pickedUpItems={};
+let inventory=[null,null,null,null,null];
+let chatting=false,selectedSlot=0;
+let yaw=0,pitch=0;
+let pvpMode=false,myHP=100;
+const MAX_HP=100,PLAYER_SPEED=6,PLAYER_HEIGHT=1.0,PICKUP_DIST=2.8;
+const MAX_FLOOR=20;
+const keys={},bubbles={},projectiles=[];
+let lastAttackTime=0,speedMult=1,goldenImmune=false;
+// Flail physics
+let flailAngle=0,flailVel=0,prevYawForFlail=0;
+const _v3=new THREE.Vector3();
 
-// ═══════════════════════════════════════════
-//  TEXTURE BUILDER  (procedural canvas textures)
-// ═══════════════════════════════════════════
-function makeTexture(drawFn, size=64) {
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    const ctx = c.getContext('2d');
-    drawFn(ctx, size);
-    const tex = new THREE.CanvasTexture(c);
-    return tex;
+// ══════════════════════════════════════════════════════
+//  MESH BUILDERS  (proper 3D geometry per item)
+// ══════════════════════════════════════════════════════
+function makeMat(hex,emissive=0,ei=0,transparent=false,alpha=1){
+  return new THREE.MeshLambertMaterial({color:hex,emissive:emissive,emissiveIntensity:ei,transparent,opacity:alpha});
 }
 
-const TEX = {};
-function buildTextures() {
-    // Sword — silver blade
-    TEX.sword = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#1a1a2d'; ctx.fillRect(0,0,s,s);
-        const g=ctx.createLinearGradient(s/2-4,0,s/2+4,s);
-        g.addColorStop(0,'#ccccee'); g.addColorStop(0.5,'#ffffff'); g.addColorStop(1,'#8888aa');
-        ctx.fillStyle=g; ctx.fillRect(s/2-3,4,6,s-20);
-        ctx.fillStyle='#aaaacc'; ctx.fillRect(s/2-10,s-18,20,5); // guard
-        ctx.fillStyle='#665544'; ctx.fillRect(s/2-2,s-13,4,10); // handle
-    });
-    // Dagger
-    TEX.dagger = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,s,s);
-        const g=ctx.createLinearGradient(s/2-2,0,s/2+2,s);
-        g.addColorStop(0,'#eeeeff'); g.addColorStop(1,'#9999bb');
-        ctx.fillStyle=g; ctx.fillRect(s/2-2,8,4,s-28);
-        ctx.fillStyle='#7777aa'; ctx.fillRect(s/2-8,s-22,16,4);
-        ctx.fillStyle='#554433'; ctx.fillRect(s/2-2,s-18,4,8);
-    });
-    // Katana — pink/red
-    TEX.katana = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#110010'; ctx.fillRect(0,0,s,s);
-        const g=ctx.createLinearGradient(s/2-2,0,s/2+4,s);
-        g.addColorStop(0,'#ffaacc'); g.addColorStop(0.5,'#ffffff'); g.addColorStop(1,'#dd4488');
-        ctx.fillStyle=g;
-        ctx.save(); ctx.translate(s/2,s/2); ctx.rotate(0.1);
-        ctx.fillRect(-2,-s/2+4,4,s-16); ctx.restore();
-        ctx.fillStyle='#cc2266'; ctx.fillRect(s/2-6,s-16,12,3);
-        ctx.fillStyle='#221122'; ctx.fillRect(s/2-2,s-13,4,9);
-    });
-    // Spear — orange tip
-    TEX.spear = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,s,s);
-        ctx.fillStyle='#664400'; ctx.fillRect(s/2-2,16,4,s-16);
-        const g=ctx.createLinearGradient(s/2-3,0,s/2+3,16);
-        g.addColorStop(0,'#ffcc44'); g.addColorStop(1,'#ff8800');
-        ctx.fillStyle=g;
-        ctx.beginPath(); ctx.moveTo(s/2,2); ctx.lineTo(s/2-5,16); ctx.lineTo(s/2+5,16); ctx.fill();
-    });
-    // Flail — dark iron ball
-    TEX.flail = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#1a1a2d'; ctx.fillRect(0,0,s,s);
-        ctx.fillStyle='#442200'; ctx.fillRect(s/2-1,4,2,s/2-8);
-        const g=ctx.createRadialGradient(s/2,s/2+8,2,s/2,s/2+8,14);
-        g.addColorStop(0,'#aaaaaa'); g.addColorStop(1,'#333333');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s/2,s/2+10,12,0,Math.PI*2); ctx.fill();
-        // spikes
-        for(let i=0;i<6;i++){
-            const a=i*Math.PI/3;
-            ctx.fillStyle='#888888';
-            ctx.save(); ctx.translate(s/2+Math.cos(a)*10,s/2+10+Math.sin(a)*10);
-            ctx.rotate(a); ctx.fillRect(-1,-4,2,4); ctx.restore();
-        }
-    });
-    // Bow
-    TEX.bow = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,s,s);
-        ctx.strokeStyle='#886633'; ctx.lineWidth=3;
-        ctx.beginPath(); ctx.arc(s/2,s/2,24,Math.PI*0.1,Math.PI*0.9,false); ctx.stroke();
-        ctx.strokeStyle='#ddddaa'; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(s/2,s/2-24); ctx.lineTo(s/2,s/2+24); ctx.stroke();
-    });
-    // Crossbow
-    TEX.crossbow = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,s,s);
-        ctx.fillStyle='#553311'; ctx.fillRect(s/2-2,8,4,s-16);
-        ctx.strokeStyle='#886633'; ctx.lineWidth=3;
-        ctx.beginPath(); ctx.moveTo(8,s/2); ctx.lineTo(s-8,s/2); ctx.stroke();
-        ctx.strokeStyle='#ccbbaa'; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(8,s/2); ctx.lineTo(s/2,s/2-8); ctx.lineTo(s-8,s/2); ctx.stroke();
-    });
-    // Balloon
-    TEX.balloon = makeTexture((ctx,s)=>{
-        const g=ctx.createRadialGradient(s/2-4,s/2-4,2,s/2,s/2,20);
-        g.addColorStop(0,'#ff99cc'); g.addColorStop(1,'#cc0066');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s/2,s/2-4,14,18,0,0,Math.PI*2); ctx.fill();
-        ctx.strokeStyle='#ffddee'; ctx.lineWidth=1; ctx.stroke();
-        ctx.strokeStyle='#cc99bb'; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(s/2,s/2+14); ctx.lineTo(s/2+4,s/2+24); ctx.stroke();
-    });
-    // Apple (red)
-    TEX.apple = makeTexture((ctx,s)=>{
-        const g=ctx.createRadialGradient(s/2-4,s/2-4,2,s/2,s/2,18);
-        g.addColorStop(0,'#ff6666'); g.addColorStop(1,'#cc0000');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s/2,s/2+2,16,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='#44aa22'; ctx.fillRect(s/2-1,6,2,8);
-    });
-    // Banana
-    TEX.banana = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#ffee00';
-        ctx.beginPath(); ctx.ellipse(s/2,s/2,8,22,0.4,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='#ccbb00';
-        ctx.beginPath(); ctx.ellipse(s/2,s/2,6,20,0.4,0,Math.PI*2); ctx.strokeStyle='#aaaa00'; ctx.lineWidth=1; ctx.stroke();
-    });
-    // Chocolate
-    TEX.chocolate = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#442211'; ctx.fillRect(6,14,s-12,s-28);
-        ctx.strokeStyle='#331100'; ctx.lineWidth=1;
-        for(let i=1;i<3;i++){ctx.beginPath();ctx.moveTo(6+i*(s-12)/3,14);ctx.lineTo(6+i*(s-12)/3,s-14);ctx.stroke();}
-        ctx.beginPath();ctx.moveTo(6,14+(s-28)/2);ctx.lineTo(s-6,14+(s-28)/2);ctx.stroke();
-        ctx.fillStyle='#663322'; ctx.fillRect(7,15,s-14,s-30);
-    });
-    // Bear trap
-    TEX.bear_trap = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#885533'; ctx.strokeStyle='#553311'; ctx.lineWidth=2;
-        ctx.beginPath(); ctx.arc(s/2,s/2+8,16,Math.PI,0,false); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.arc(s/2,s/2+8,16,0,Math.PI,false); ctx.fill(); ctx.stroke();
+function buildItemMesh(defKey){
+  const g=new THREE.Group();
+  switch(defKey){
+
+    // ── SWORD: cross shape (upside-down T)
+    case'sword':{
+      const blade=new THREE.Mesh(new THREE.BoxGeometry(.08,.7,.05),makeMat(0xccccee,0x8888cc,.15));
+      blade.position.y=.35;
+      const guard=new THREE.Mesh(new THREE.BoxGeometry(.38,.06,.05),makeMat(0x999999));
+      guard.position.y=0;
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.22,8),makeMat(0x553322));
+      handle.position.y=-.18;
+      g.add(blade,guard,handle);
+      break;}
+
+    // ── DAGGER: shorter sword
+    case'dagger':{
+      const blade=new THREE.Mesh(new THREE.BoxGeometry(.06,.42,.04),makeMat(0xeeeeff,0xaaaadd,.15));
+      blade.position.y=.21;
+      const guard=new THREE.Mesh(new THREE.BoxGeometry(.24,.05,.04),makeMat(0x7777aa));
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.15,8),makeMat(0x442211));
+      handle.position.y=-.12;
+      g.add(blade,guard,handle);
+      break;}
+
+    // ── KATANA: thinner, slightly curved blade
+    case'katana':{
+      // slight curve via tapered box
+      const blade=new THREE.Mesh(new THREE.BoxGeometry(.05,.8,.03),makeMat(0xffaabb,0xee4488,.2));
+      blade.position.y=.4;blade.rotation.z=.06;
+      const tsuba=new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,.025,6),makeMat(0xcc2266));
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.025,.03,.28,8),makeMat(0x221133));
+      handle.position.y=-.19;
+      // wrapping detail
+      const wrap=new THREE.Mesh(new THREE.TorusGeometry(.028,.008,4,6),makeMat(0xaa88aa));
+      wrap.position.y=-.15;wrap.rotation.x=Math.PI/2;
+      g.add(blade,tsuba,handle,wrap);
+      break;}
+
+    // ── SPEAR: long pole + diamond tip
+    case'spear':{
+      const pole=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.9,8),makeMat(0x6b3a1f));
+      pole.position.y=0;
+      const tip=new THREE.Mesh(new THREE.ConeGeometry(.06,.28,6),makeMat(0xffaa44,0xff6600,.2));
+      tip.position.y=.59;
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(.03,.008,4,8),makeMat(0xcc8800));
+      ring.position.y=.44;ring.rotation.x=Math.PI/2;
+      g.add(pole,tip,ring);
+      break;}
+
+    // ── FLAIL: handle + chain + ball
+    case'flail':{
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.4,8),makeMat(0x553311));
+      handle.position.y=-.2;
+      // chain links (3 small tori)
+      for(let i=0;i<3;i++){
+        const link=new THREE.Mesh(new THREE.TorusGeometry(.04,.012,4,6),makeMat(0x888888));
+        link.position.y=.1+i*.12;link.rotation.x=i%2?Math.PI/2:0;
+        g.add(link);
+      }
+      const ball=new THREE.Mesh(new THREE.SphereGeometry(.1,8,8),makeMat(0x555555,0x222222,.1));
+      ball.position.y=.48;
+      // spikes on ball
+      for(let i=0;i<6;i++){
+        const a=i*Math.PI/3;
+        const spike=new THREE.Mesh(new THREE.ConeGeometry(.025,.08,4),makeMat(0x777777));
+        spike.position.set(Math.cos(a)*.1,.48+Math.sin(a)*.1,0);
+        spike.lookAt(Math.cos(a)*.3,.48+Math.sin(a)*.3,0);
+        g.add(spike);
+      }
+      g.add(handle,ball);
+      break;}
+
+    // ── BOW: arc + string
+    case'bow':{
+      // Curved bow using a tube along a curve
+      const curve=new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(0,-.35,0),new THREE.Vector3(.22,0,0),new THREE.Vector3(0,.35,0)
+      );
+      const pts=curve.getPoints(16);
+      const bowGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),.03,.015,6,false);
+      const bow=new THREE.Mesh(bowGeo,makeMat(0x8b5e3c));
+      // string
+      const strGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-.32,0),new THREE.Vector3(0,.32,0)]);
+      const str=new THREE.Line(strGeo,new THREE.LineBasicMaterial({color:0xddddaa}));
+      g.add(bow,str);
+      break;}
+
+    // ── CROSSBOW: bow + stock
+    case'crossbow':{
+      const stock=new THREE.Mesh(new THREE.BoxGeometry(.06,.55,.06),makeMat(0x5c3317));
+      stock.position.y=0;
+      const rail=new THREE.Mesh(new THREE.BoxGeometry(.04,.35,.04),makeMat(0x3a1f08));
+      rail.position.y=.05;rail.position.z=.06;
+      const arm=new THREE.Mesh(new THREE.BoxGeometry(.4,.05,.04),makeMat(0x8b5e3c));
+      arm.position.y=.16;
+      const str2Geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.18,.16,0),new THREE.Vector3(0,.08,0),new THREE.Vector3(.18,.16,0)]);
+      const str2=new THREE.Line(str2Geo,new THREE.LineBasicMaterial({color:0xddddaa}));
+      g.add(stock,rail,arm,str2);
+      break;}
+
+    // ── BALLOON: sphere with string
+    case'balloon':{
+      const ball=new THREE.Mesh(new THREE.SphereGeometry(.18,12,12),makeMat(0xff66aa,0xff2288,.15,true,.92));
+      ball.position.y=.2;
+      const shine=new THREE.Mesh(new THREE.SphereGeometry(.06,8,8),makeMat(0xffffff,0xffffff,.3,true,.5));
+      shine.position.set(-.06,.32,0);
+      const strGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.04,0),new THREE.Vector3(0,-.22,0)]);
+      const str=new THREE.Line(strGeo,new THREE.LineBasicMaterial({color:0xffaacc}));
+      g.add(ball,shine,str);
+      break;}
+
+    // ── APPLE: sphere + stem + leaf
+    case'apple':{
+      const body=new THREE.Mesh(new THREE.SphereGeometry(.14,10,10),makeMat(0xee2222,0x880000,.1));
+      const stem=new THREE.Mesh(new THREE.CylinderGeometry(.01,.01,.08,6),makeMat(0x553311));
+      stem.position.y=.16;
+      const leaf=new THREE.Mesh(new THREE.BoxGeometry(.08,.04,.02),makeMat(0x33aa22));
+      leaf.position.set(.05,.19,0);leaf.rotation.z=-.4;
+      g.add(body,stem,leaf);
+      break;}
+
+    // ── BANANA: curved elongated shape
+    case'banana':{
+      const curve=new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(-.06,-.2,0),new THREE.Vector3(.1,0,0),new THREE.Vector3(-.04,.2,0)
+      );
+      const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(curve.getPoints(12)),.04,.03,6,false);
+      const body=new THREE.Mesh(geo,makeMat(0xffdd00,0xcc9900,.05));
+      const tipA=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),makeMat(0xbb8800));
+      tipA.position.set(-.04,-.22,0);
+      const tipB=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),makeMat(0xbb8800));
+      tipB.position.set(-.04,.22,0);
+      g.add(body,tipA,tipB);
+      break;}
+
+    // ── CHOCOLATE: flat segmented bar
+    case'chocolate':{
+      const bar=new THREE.Mesh(new THREE.BoxGeometry(.3,.08,.2),makeMat(0x5c2d0e,0x3a1a06,.05));
+      // segments
+      for(let r=0;r<2;r++)for(let c=0;c<3;c++){
+        const seg=new THREE.Mesh(new THREE.BoxGeometry(.085,.015,.055),makeMat(0x7a3d18));
+        seg.position.set(-.09+c*.095,0.048,-.065+r*.085);
+        g.add(seg);
+      }
+      g.add(bar);
+      break;}
+
+    // ── BEAR TRAP: two jaw halves + spring
+    case'bear_trap':{
+      const base=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.04,8),makeMat(0x664422));
+      base.position.y=-.05;
+      // jaws (two half-torus-like shapes via box arcs)
+      [-1,1].forEach(side=>{
+        const jaw=new THREE.Mesh(new THREE.BoxGeometry(.3,.06,.08),makeMat(0x888888));
+        jaw.position.set(0,.04,side*.07);jaw.rotation.x=side*-.3;
         // teeth
-        for(let i=0;i<5;i++){
-            ctx.fillStyle='#cccccc';
-            ctx.fillRect(s/2-14+i*7,s/2+2,3,6);
-            ctx.fillRect(s/2-14+i*7,s/2+4,3,-6);
+        for(let t=0;t<4;t++){
+          const tooth=new THREE.Mesh(new THREE.ConeGeometry(.02,.07,4),makeMat(0xbbbbbb));
+          tooth.position.set(-.1+t*.065,.08,side*.07);
+          g.add(tooth);
         }
-    });
-    // Web trap
-    TEX.web_trap = makeTexture((ctx,s)=>{
-        ctx.strokeStyle='rgba(220,220,220,0.8)'; ctx.lineWidth=1;
-        for(let r=4;r<s/2;r+=8){
-            ctx.beginPath(); ctx.arc(s/2,s/2,r,0,Math.PI*2); ctx.stroke();
-        }
-        for(let a=0;a<8;a++){
-            const ang=a*Math.PI/4;
-            ctx.beginPath(); ctx.moveTo(s/2,s/2);
-            ctx.lineTo(s/2+Math.cos(ang)*s/2,s/2+Math.sin(ang)*s/2); ctx.stroke();
-        }
-    });
-    // Poison apple
-    TEX.poison_apple = makeTexture((ctx,s)=>{
-        const g=ctx.createRadialGradient(s/2-4,s/2-4,2,s/2,s/2,18);
-        g.addColorStop(0,'#aaffaa'); g.addColorStop(1,'#228822');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s/2,s/2+2,16,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='#008800'; ctx.fillRect(s/2-1,6,2,8);
-        ctx.fillStyle='rgba(0,200,0,0.4)'; ctx.beginPath(); ctx.arc(s/2,s/2,12,0,Math.PI*2); ctx.fill();
-    });
-    // Golden apple
-    TEX.golden_apple = makeTexture((ctx,s)=>{
-        const g=ctx.createRadialGradient(s/2-4,s/2-4,2,s/2,s/2,18);
-        g.addColorStop(0,'#ffffaa'); g.addColorStop(0.5,'#ffdd00'); g.addColorStop(1,'#cc8800');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s/2,s/2+2,16,0,Math.PI*2); ctx.fill();
-        ctx.strokeStyle='#ffeeaa'; ctx.lineWidth=1.5; ctx.stroke();
-        ctx.fillStyle='#448822'; ctx.fillRect(s/2-1,6,2,8);
-        // sparkle
-        ctx.fillStyle='#ffffcc';
-        [[s/2-8,s/2-8],[s/2+10,s/2-4],[s/2+4,s/2+10]].forEach(([x,y])=>{
-            ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2); ctx.fill();
-        });
-    });
+        g.add(jaw);
+      });
+      const spring=new THREE.Mesh(new THREE.TorusGeometry(.06,.01,4,8),makeMat(0x666666));
+      spring.position.y=-.02;
+      g.add(base,spring);
+      break;}
+
+    // ── WEB TRAP: flat disc with web lines
+    case'web_trap':{
+      const disc=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.02,16),makeMat(0xdddddd,0xffffff,.1,true,.7));
+      disc.position.y=-.04;
+      // radial lines
+      for(let i=0;i<8;i++){
+        const a=i*Math.PI/4;
+        const lg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-.03,0),new THREE.Vector3(Math.cos(a)*.26,-.03,Math.sin(a)*.26)]);
+        g.add(new THREE.Line(lg,new THREE.LineBasicMaterial({color:0xaaaaaa,transparent:true,opacity:.7})));
+      }
+      // rings
+      for(let r=1;r<=3;r++){
+        const rg=new THREE.RingGeometry(r*.08,r*.08+.006,16);
+        const rm=new THREE.Mesh(rg,makeMat(0xcccccc,0,0,true,.6));
+        rm.rotation.x=-Math.PI/2;rm.position.y=-.03;
+        g.add(rm);
+      }
+      g.add(disc);
+      break;}
+
+    // ── POISON APPLE: green apple
+    case'poison_apple':{
+      const body=new THREE.Mesh(new THREE.SphereGeometry(.14,10,10),makeMat(0x33dd44,0x008820,.15));
+      const stem=new THREE.Mesh(new THREE.CylinderGeometry(.01,.01,.08,6),makeMat(0x553311));
+      stem.position.y=.16;
+      const leaf=new THREE.Mesh(new THREE.BoxGeometry(.08,.04,.02),makeMat(0x22cc33));
+      leaf.position.set(.05,.19,0);leaf.rotation.z=-.4;
+      // purple glow
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.16,8,8),makeMat(0x44ff44,0x44ff44,.3,true,.18));
+      g.add(body,stem,leaf,glow);
+      break;}
+
+    // ── GOLDEN APPLE: gold apple with sparkles
+    case'golden_apple':{
+      const body=new THREE.Mesh(new THREE.SphereGeometry(.15,12,12),makeMat(0xffdd00,0xff8800,.3));
+      const stem=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,.09,6),makeMat(0x553311));
+      stem.position.y=.18;
+      const leaf=new THREE.Mesh(new THREE.BoxGeometry(.08,.04,.02),makeMat(0x33aa22));
+      leaf.position.set(.05,.21,0);leaf.rotation.z=-.4;
+      // glow aura
+      const aura=new THREE.Mesh(new THREE.SphereGeometry(.22,8,8),makeMat(0xffdd00,0xffaa00,.4,true,.15));
+      const light=new THREE.PointLight(0xffdd00,1.5,5);
+      g.add(body,stem,leaf,aura,light);
+      break;}
+
+    default:{
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),makeMat(0xaaaaaa)));
+    }
+  }
+  return g;
 }
 
-// ═══════════════════════════════════════════
-//  LAUNCH
-// ═══════════════════════════════════════════
-function launch(u) {
-    currentUser = u;
-    document.getElementById('auth-container').classList.add('hidden');
-    document.getElementById('game-wrapper').classList.remove('hidden');
-    document.getElementById('username-tag').innerText = u;
-    if (u === 'bartelsfamily5') document.getElementById('reset-btn').classList.remove('hidden');
-
-    db.ref("users/"+u+"/pfp").on("value",s=>{ document.getElementById('my-mini-pfp').src = s.val()||'https://via.placeholder.com/28'; });
-    db.ref("users/"+u).on("value",s=>{
-        if(!s.exists()) return;
-        const d=s.val();
-        if(d.banned){showBanScreen();return;}
-        if(d.warned===true){alert("⚠️ ADMIN WARNING: Please follow the rules.");db.ref("users/"+u).update({warned:false});}
-    });
-
-    buildTextures();
-    initGame();
-    initFirebase();
-    initPVP();
-    startAutoSpawn();
-}
-
-// ═══════════════════════════════════════════
-//  MODAL
-// ═══════════════════════════════════════════
-function showModal(html) {
-    document.getElementById('modal-content').innerHTML = html +
-        `<button onclick="closeModal()" style="background:var(--primary);width:100%;margin-top:15px;border:none;border-radius:6px;color:white;padding:8px;cursor:pointer;">Close</button>`;
-    document.getElementById('master-modal').classList.remove('hidden');
-}
-function closeModal() { document.getElementById('master-modal').classList.add('hidden'); }
-
-function openControls() {
-    showModal(`<h3>Controls</h3>
-    <div style="text-align:left;font-size:12px;line-height:2;color:#aaa;">
-        <b style="color:white;">WASD</b> — Move<br>
-        <b style="color:white;">Mouse</b> — Look (click canvas to lock)<br>
-        <b style="color:white;">E</b> — Pick up nearby item<br>
-        <b style="color:white;">Q</b> — Drop selected slot<br>
-        <b style="color:white;">F</b> — Attack (weapon) / toggle 3rd person (no weapon)<br>
-        <b style="color:white;">1–5</b> — Select inventory slot<br>
-        <b style="color:white;">/</b> — Open chat<br>
-        <hr style="border-color:#333;margin:8px 0">
-        <b style="color:#eb4d4b;">Flail</b> — No F attack. Flick mouse fast to swing!<br>
-        <b style="color:#ffdd00;">Golden Apple</b> — Full heal + 5s immunity, only 1 exists<br>
-        <b style="color:#aaffaa;">Katana</b> — Holder moves faster<br>
-        <b style="color:#ffaa44;">Spear</b> — Long range + bleed damage<br>
-        <b style="color:#ff66aa;">Balloon</b> — Hold for speed boost
-    </div>`);
-}
-
-function openMembers() {
-    db.ref("claregame_players").once("value", snap => {
-        let html = `<h3>👥 Online Now</h3>`;
-        if (!snap.exists()) html += `<p style="color:#666;font-size:12px;">Nobody else is online.</p>`;
-        snap.forEach(c => {
-            html += `<div style="text-align:left;padding:6px 0;border-bottom:1px solid #333;font-size:12px;">
-                <b style="color:#a29bfe;">${c.key}</b>
-                ${admins.includes(c.key)?'<span style="color:var(--primary);font-size:9px;margin-left:4px;">[ADM]</span>':''}
-            </div>`;
-        });
-        showModal(html);
-    });
-}
-
-// ═══════════════════════════════════════════
-//  THREE.JS INIT
-// ═══════════════════════════════════════════
-function initGame() {
-    const canvas = document.getElementById('game-canvas');
-    const wrap   = document.getElementById('canvas-wrap');
-    renderer = new THREE.WebGLRenderer({canvas,antialias:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(wrap.clientWidth,wrap.clientHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.setClearColor(0x0f0f1a);
-    scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0f0f1a,22,70);
-    camera = new THREE.PerspectiveCamera(75,wrap.clientWidth/wrap.clientHeight,0.1,200);
-    camera.position.set(0,PLAYER_HEIGHT,0);
-    camera.rotation.order='YXZ';
-    clock = new THREE.Clock();
-
-    buildWorld();
-    spawnAllItems();
-    setupInput();
-    document.getElementById('health-bar').style.display='block';
-    animate();
-
-    window.addEventListener('resize',()=>{
-        const w=wrap.clientWidth,h=wrap.clientHeight;
-        renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
-    });
-}
-
-// ═══════════════════════════════════════════
-//  WORLD BUILD
-// ═══════════════════════════════════════════
-function buildWorld() {
-    // Ground with subtle texture
-    const groundTex = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#12122a'; ctx.fillRect(0,0,s,s);
-        ctx.strokeStyle='#1a1a3a'; ctx.lineWidth=1;
-        for(let i=0;i<s;i+=8){
-            ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,s);ctx.stroke();
-            ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(s,i);ctx.stroke();
-        }
-    },128);
-    groundTex.wrapS=groundTex.wrapT=THREE.RepeatWrapping;
-    groundTex.repeat.set(20,20);
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(120,120),
-        new THREE.MeshLambertMaterial({map:groundTex})
-    );
-    ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
-
-    const grid = new THREE.GridHelper(120,60,0x4834d4,0x1e1e35);
-    grid.position.y=0.01; scene.add(grid);
-
-    scene.add(new THREE.AmbientLight(0x4834d4,0.4));
-    const dL = new THREE.DirectionalLight(0xffffff,0.6); dL.position.set(10,20,10); scene.add(dL);
-    const pL = new THREE.PointLight(0x4834d4,2,40); pL.position.set(0,8,0); scene.add(pL);
-
-    // Obstacle blocks with brick-ish texture
-    const brickTex = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#1a1a3a'; ctx.fillRect(0,0,s,s);
-        ctx.strokeStyle='#4834d4'; ctx.lineWidth=0.5; ctx.globalAlpha=0.4;
-        for(let y=0;y<s;y+=8){
-            const off=(y/8%2)*12;
-            for(let x=-12;x<s;x+=24){
-                ctx.strokeRect(x+off,y,22,7);
-            }
-        }
-    },64);
-
-    [[8,1,8],[-8,1,8],[8,1,-8],[-8,1,-8],
-     [0,1,15],[15,1,0],[0,1,-15],[-15,1,0],
-     [12,2,4],[-12,2,-4],[5,0.5,-12],[-5,0.5,12]
-    ].forEach(([x,y,z])=>{
-        const h=y*2;
-        const geo=new THREE.BoxGeometry(2,h,2);
-        const mat=new THREE.MeshLambertMaterial({map:brickTex});
-        const mesh=new THREE.Mesh(geo,mat); mesh.position.set(x,h/2,z); mesh.castShadow=true; scene.add(mesh);
-        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:0x4834d4,transparent:true,opacity:0.4})));
-    });
-
-    // Self mesh (shown in 3rd person)
-    selfMesh = makePlayerMesh(0x4834d4, false);
-    selfMesh.visible = false;
-    scene.add(selfMesh);
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  PLAYER MESH
-// ═══════════════════════════════════════════
-function makePlayerMesh(hexColor, addEdges=true) {
-    const group = new THREE.Group();
-    const skinTex = makeTexture((ctx,s)=>{
-        ctx.fillStyle='#'+hexColor.toString(16).padStart(6,'0');
-        ctx.fillRect(0,0,s,s);
-        ctx.globalAlpha=0.3; ctx.fillStyle='#ffffff';
-        ctx.fillRect(0,0,s,s/2);
-    },32);
-    const mat = new THREE.MeshLambertMaterial({color:hexColor});
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8,1.0,0.8),mat);
-    body.position.y=0.5; group.add(body);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.65,0.65,0.65),mat);
-    head.position.y=1.32; group.add(head);
-    [-0.15,0.15].forEach(ex=>{
-        const eye=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.08,0.05),new THREE.MeshBasicMaterial({color:0x000000}));
-        eye.position.set(ex,1.36,-0.33); group.add(eye);
-    });
-    if(addEdges){
-        [new THREE.BoxGeometry(0.8,1.0,0.8),new THREE.BoxGeometry(0.65,0.65,0.65)].forEach((g,i)=>{
-            const e=new THREE.LineSegments(new THREE.EdgesGeometry(g),new THREE.LineBasicMaterial({color:hexColor}));
-            e.position.y=i===0?0.5:1.32; group.add(e);
-        });
-    }
-    return group;
+// ══════════════════════════════════════════════════════
+function makePlayerMesh(hexColor){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshLambertMaterial({color:hexColor});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.8,1.0,.8),mat); body.position.y=.5;
+  const head=new THREE.Mesh(new THREE.BoxGeometry(.65,.65,.65),mat); head.position.y=1.32;
+  [-0.15,0.15].forEach(ex=>{
+    const eye=new THREE.Mesh(new THREE.BoxGeometry(.1,.08,.05),new THREE.MeshBasicMaterial({color:0}));
+    eye.position.set(ex,1.36,-.33); g.add(eye);
+  });
+  [new THREE.BoxGeometry(.8,1.0,.8),new THREE.BoxGeometry(.65,.65,.65)].forEach((geo,i)=>{
+    const e=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:hexColor}));
+    e.position.y=i===0?.5:1.32; g.add(e);
+  });
+  // right arm (item holder anchor)
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(.2,.7,.2),mat); arm.position.set(.52,.5,.0);
+  const handAnchor=new THREE.Group(); handAnchor.position.set(.52,.55,-.35); handAnchor.name='handAnchor';
+  g.add(body,head,arm,handAnchor);
+  return g;
 }
 
-// ═══════════════════════════════════════════
-//  ITEM MESH BUILDER
-// ═══════════════════════════════════════════
-function makeItemMesh(defKey) {
-    const def = ITEM_DEFS[defKey];
-    const tex = TEX[defKey];
-    const mat = tex
-        ? new THREE.MeshLambertMaterial({map:tex,transparent:true})
-        : new THREE.MeshLambertMaterial({color:def.color,emissive:def.color,emissiveIntensity:0.3});
-
-    let geo;
-    // Shape based on item type
-    if(defKey==='banana')          geo=new THREE.BoxGeometry(0.15,0.5,0.15);
-    else if(defKey==='chocolate')  geo=new THREE.BoxGeometry(0.5,0.1,0.3);
-    else if(defKey==='spear')      geo=new THREE.BoxGeometry(0.1,0.6,0.1);
-    else if(defKey==='flail')      geo=new THREE.SphereGeometry(0.22,8,8);
-    else if(defKey==='balloon')    geo=new THREE.SphereGeometry(0.22,10,10);
-    else if(defKey==='bear_trap')  geo=new THREE.CylinderGeometry(0.3,0.3,0.08,8);
-    else if(defKey==='web_trap')   geo=new THREE.CylinderGeometry(0.35,0.35,0.04,12);
-    else                            geo=new THREE.BoxGeometry(0.4,0.4,0.4);
-
-    const mesh = new THREE.Mesh(geo, mat);
-
-    // edge glow
-    const edgeMat = new THREE.LineBasicMaterial({color:def.color,transparent:true,opacity:0.6});
-    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat));
-
-    // special: golden apple glow light
-    if(defKey==='golden_apple'){
-        const pl=new THREE.PointLight(0xffdd00,1.5,6);
-        mesh.add(pl);
-    }
-    return mesh;
+// ══════════════════════════════════════════════════════
+//  HAND ITEM (first person — attached to camera)
+// ══════════════════════════════════════════════════════
+function updateHandItem(){
+  // Remove old
+  if(handItemMesh){camera.remove(handItemMesh);handItemMesh=null;}
+  const item=inventory[selectedSlot];
+  if(!item) return;
+  const mesh=buildItemMesh(item.defKey);
+  // Position bottom-right of screen, like holding it
+  mesh.position.set(.32,-.28,-.55);
+  mesh.rotation.set(0,-.4,.15);
+  mesh.scale.setScalar(.7);
+  camera.add(mesh);
+  handItemMesh=mesh;
 }
 
-// ═══════════════════════════════════════════
-//  SPAWN ITEMS
-// ═══════════════════════════════════════════
-function spawnAllItems() {
-    SPAWN_TABLE.forEach(s=>{
-        if(!pickedUpItems[s.id]) spawnItemMesh(s.id, s.def, s.x, s.z);
-    });
+// ══════════════════════════════════════════════════════
+//  OTHER PLAYER'S HAND ITEM
+// ══════════════════════════════════════════════════════
+function updateOtherHand(u,defKey){
+  const op=otherPlayers[u]; if(!op) return;
+  const anchor=op.mesh.getObjectByName('handAnchor');
+  if(!anchor) return;
+  // Remove old hand item
+  while(anchor.children.length) anchor.remove(anchor.children[0]);
+  if(!defKey) return;
+  const mesh=buildItemMesh(defKey);
+  mesh.scale.setScalar(.6);
+  mesh.rotation.set(0,0,-.5);
+  anchor.add(mesh);
 }
 
-function spawnItemMesh(id, defKey, x, z) {
-    if(worldItemMeshes[id]) return;
-    const mesh = makeItemMesh(defKey);
-    mesh.position.set(x, 0.4, z);
-    mesh.userData = {id, defKey, x, z};
-    scene.add(mesh);
-    worldItemMeshes[id] = mesh;
+// ══════════════════════════════════════════════════════
+//  LAUNCH
+// ══════════════════════════════════════════════════════
+function launch(u){
+  currentUser=u;
+  document.getElementById('auth-container').classList.add('hidden');
+  document.getElementById('game-wrapper').classList.remove('hidden');
+  document.getElementById('username-tag').innerText=u;
+  if(u==='bartelsfamily5') document.getElementById('reset-btn').classList.remove('hidden');
+  db.ref("users/"+u+"/pfp").on("value",s=>{ document.getElementById('my-mini-pfp').src=s.val()||'https://via.placeholder.com/28'; });
+  db.ref("users/"+u).on("value",s=>{
+    if(!s.exists()) return; const d=s.val();
+    if(d.banned){showBanScreen();return;}
+    if(d.warned===true){alert("⚠️ ADMIN WARNING: Follow the rules.");db.ref("users/"+u).update({warned:false});}
+  });
+  initGame(); initFirebase(); initPVP(); startAutoSpawn();
 }
 
-function removeWorldItem(id) {
-    if(worldItemMeshes[id]){ scene.remove(worldItemMeshes[id]); delete worldItemMeshes[id]; }
+// ══════════════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════════════
+function showModal(html){document.getElementById('modal-content').innerHTML=html+`<button onclick="closeModal()" style="background:var(--primary);width:100%;margin-top:15px;border:none;border-radius:6px;color:white;padding:8px;cursor:pointer;">Close</button>`;document.getElementById('master-modal').classList.remove('hidden');}
+function closeModal(){document.getElementById('master-modal').classList.add('hidden');}
+function openControls(){
+  showModal(`<h3>Controls</h3><div style="text-align:left;font-size:12px;line-height:2;color:#aaa;">
+    <b style="color:white;">WASD</b> — Move<br><b style="color:white;">Mouse</b> — Look<br>
+    <b style="color:white;">E</b> — Pick up<br><b style="color:white;">Q</b> — Drop selected<br>
+    <b style="color:white;">F</b> — Attack / Use item / Place trap<br>
+    <b style="color:white;">P</b> — Toggle perspective<br>
+    <b style="color:white;">1–5</b> — Select slot<br><b style="color:white;">/</b> — Chat<br>
+    <hr style="border-color:#333;margin:8px 0">
+    <b style="color:#eb4d4b;">Flail</b> — Flick mouse fast to swing<br>
+    <b style="color:#ffdd00;">Golden Apple</b> — Full heal + 5s immunity<br>
+    <b style="color:#aaffaa;">Katana</b> — Speed boost while selected<br>
+    <b style="color:#ff88cc;">Balloon</b> — Speed boost while selected
+  </div>`);
+}
+function openMembers(){
+  db.ref("claregame_players").once("value",snap=>{
+    let html=`<h3>👥 Online</h3>`;
+    if(!snap.exists()) html+=`<p style="color:#666;font-size:12px;">Nobody else online.</p>`;
+    snap.forEach(c=>{html+=`<div style="text-align:left;padding:6px 0;border-bottom:1px solid #333;font-size:12px;"><b style="color:#a29bfe;">${c.key}</b>${admins.includes(c.key)?'<span style="color:var(--primary);font-size:9px;margin-left:4px;">[ADM]</span>':''}</div>`;});
+    showModal(html);
+  });
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  THREE.JS INIT
+// ══════════════════════════════════════════════════════
+function initGame(){
+  const canvas=document.getElementById('game-canvas');
+  const wrap=document.getElementById('canvas-wrap');
+  renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(wrap.clientWidth,wrap.clientHeight);
+  renderer.shadowMap.enabled=true;
+  renderer.setClearColor(0x0f0f1a);
+  scene=new THREE.Scene(); scene.fog=new THREE.Fog(0x0f0f1a,22,70);
+  camera=new THREE.PerspectiveCamera(75,wrap.clientWidth/wrap.clientHeight,.1,200);
+  camera.position.set(0,PLAYER_HEIGHT,0); camera.rotation.order='YXZ';
+  clock=new THREE.Clock();
+  buildWorld(); spawnAllItems(); setupInput();
+  selfMesh=makePlayerMesh(0x4834d4); selfMesh.visible=false; scene.add(selfMesh);
+  document.getElementById('health-bar').style.display='block';
+  animate();
+  window.addEventListener('resize',()=>{ const w=wrap.clientWidth,h=wrap.clientHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); });
+}
+
+// ══════════════════════════════════════════════════════
+//  WORLD
+// ══════════════════════════════════════════════════════
+function buildWorld(){
+  // Ground
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(120,120),new THREE.MeshLambertMaterial({color:0x12122a}));
+  ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+  const grid=new THREE.GridHelper(120,60,0x4834d4,0x1e1e35); grid.position.y=.01; scene.add(grid);
+  scene.add(new THREE.AmbientLight(0x4834d4,.4));
+  const dL=new THREE.DirectionalLight(0xffffff,.6); dL.position.set(10,20,10); scene.add(dL);
+  const pL=new THREE.PointLight(0x4834d4,2,40); pL.position.set(0,8,0); scene.add(pL);
+  [[8,1,8],[-8,1,8],[8,1,-8],[-8,1,-8],[0,1,15],[15,1,0],[0,1,-15],[-15,1,0],[12,2,4],[-12,2,-4],[5,.5,-12],[-5,.5,12]].forEach(([x,y,z])=>{
+    const h=y*2;
+    const geo=new THREE.BoxGeometry(2,h,2);
+    const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x1a1a3a}));
+    mesh.position.set(x,h/2,z); mesh.castShadow=true; scene.add(mesh);
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:0x4834d4,transparent:true,opacity:.4})));
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  WORLD ITEM SPAWNING
+// ══════════════════════════════════════════════════════
+function spawnAllItems(){SPAWN_TABLE.forEach(s=>{if(!pickedUpItems[s.id]) spawnItemMesh(s.id,s.def,s.x,s.z);});}
+
+function spawnItemMesh(id,defKey,x,z){
+  if(worldItemMeshes[id]) return;
+  const mesh=buildItemMesh(defKey);
+  mesh.position.set(x,.5,z);
+  mesh.userData={id,defKey,x,z};
+  scene.add(mesh); worldItemMeshes[id]=mesh;
+}
+
+function removeWorldItem(id){if(worldItemMeshes[id]){scene.remove(worldItemMeshes[id]);delete worldItemMeshes[id];}}
+
+// ══════════════════════════════════════════════════════
 //  INPUT
-// ═══════════════════════════════════════════
-function setupInput() {
-    document.addEventListener('keydown',e=>{
-        if(chatting) return;
-        keys[e.key.toLowerCase()]=true;
-        if(e.key==='/')       { e.preventDefault(); openChat(); }
-        if(e.key.toLowerCase()==='e') tryPickup();
-        if(e.key.toLowerCase()==='q') tryDrop();
-        if(e.key.toLowerCase()==='f') handleF();
-        if(e.key==='Escape')  document.exitPointerLock();
-        const n=parseInt(e.key);
-        if(n>=1&&n<=5) selectSlot(n-1);
-    });
-    document.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
-
-    const canvas=document.getElementById('game-canvas');
-    canvas.addEventListener('click',()=>{ if(!chatting) canvas.requestPointerLock(); });
-    document.addEventListener('mousemove',e=>{
-        if(document.pointerLockElement!==canvas||chatting) return;
-        prevYaw=yaw;
-        yaw   -= e.movementX*0.002;
-        pitch -= e.movementY*0.002;
-        pitch  = Math.max(-Math.PI/3,Math.min(Math.PI/4,pitch));
-
-        // FLAIL: detect fast flick
-        if(pvpMode) checkFlailSwing(Math.abs(e.movementX));
-    });
+// ══════════════════════════════════════════════════════
+function setupInput(){
+  document.addEventListener('keydown',e=>{
+    if(chatting) return;
+    keys[e.key.toLowerCase()]=true;
+    if(e.key==='/')        {e.preventDefault();openChat();}
+    if(e.key.toLowerCase()==='e') tryPickup();
+    if(e.key.toLowerCase()==='q') tryDrop();
+    if(e.key.toLowerCase()==='f') handleF();
+    if(e.key.toLowerCase()==='p') togglePerspective();
+    if(e.key==='Escape')   document.exitPointerLock();
+    const n=parseInt(e.key); if(n>=1&&n<=5) selectSlot(n-1);
+  });
+  document.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+  const canvas=document.getElementById('game-canvas');
+  canvas.addEventListener('click',()=>{if(!chatting) canvas.requestPointerLock();});
+  document.addEventListener('mousemove',e=>{
+    if(document.pointerLockElement!==canvas||chatting) return;
+    const dx=e.movementX;
+    prevYawForFlail=yaw;
+    yaw-=dx*.002; pitch-=e.movementY*.002;
+    pitch=Math.max(-Math.PI/3,Math.min(Math.PI/4,pitch));
+    // Flail physics: mouse movement drives flail velocity
+    if(pvpMode) checkFlailSwing(Math.abs(dx),dx);
+  });
 }
 
-// ═══════════════════════════════════════════
-//  F KEY  — attack if holding weapon, else toggle 3rd person
-// ═══════════════════════════════════════════
-function handleF() {
-    const item = inventory[selectedSlot];
-    if(!item) { toggleThirdPerson(); return; }
-    const def = ITEM_DEFS[item.defKey];
-    if(!def || def.type!=='weapon') { toggleThirdPerson(); return; }
-    if(def.special==='flail') { showNotif("Flail: flick your mouse to swing!"); return; }
-    tryAttack();
+// ══════════════════════════════════════════════════════
+//  PERSPECTIVE TOGGLE (P)
+// ══════════════════════════════════════════════════════
+function togglePerspective(){
+  thirdPerson=!thirdPerson;
+  selfMesh.visible=thirdPerson;
+  if(handItemMesh) handItemMesh.visible=!thirdPerson;
+  showNotif(thirdPerson?'3rd person':'1st person');
 }
 
-function toggleThirdPerson() {
-    thirdPerson = !thirdPerson;
-    selfMesh.visible = thirdPerson;
-    showNotif(thirdPerson ? '3rd person ON' : '1st person ON');
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  CHAT
-// ═══════════════════════════════════════════
-function openChat() {
-    chatting=true; document.exitPointerLock();
-    const wrap=document.getElementById('chat-input-wrap');
-    const inp=document.getElementById('chat-in');
-    wrap.style.display='block'; inp.value='';
-    setTimeout(()=>inp.focus(),50);
-    inp.onkeydown=e=>{
-        if(e.key==='Enter'){ const t=inp.value.trim(); if(t) db.ref("claregame_chat").push({username:currentUser,text:t,time:Date.now()}); closeChat(); }
-        if(e.key==='Escape') closeChat();
-    };
+// ══════════════════════════════════════════════════════
+function openChat(){
+  chatting=true; document.exitPointerLock();
+  const wrap=document.getElementById('chat-input-wrap');
+  wrap.style.display='block';
+  const inp=document.getElementById('chat-in'); inp.value='';
+  setTimeout(()=>inp.focus(),50);
+  inp.onkeydown=e=>{
+    if(e.key==='Enter'){const t=inp.value.trim();if(t) db.ref("claregame_chat").push({username:currentUser,text:t,time:Date.now()});closeChat();}
+    if(e.key==='Escape') closeChat();
+  };
 }
-function closeChat() {
-    chatting=false;
-    document.getElementById('chat-input-wrap').style.display='none';
-    document.getElementById('chat-in').value='';
-}
+function closeChat(){chatting=false;document.getElementById('chat-input-wrap').style.display='none';document.getElementById('chat-in').value='';}
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  INVENTORY
-// ═══════════════════════════════════════════
-function selectSlot(i) {
-    selectedSlot=i;
-    updateInventoryUI();
-    applyPassiveEffects();
+// ══════════════════════════════════════════════════════
+function selectSlot(i){
+  selectedSlot=i; updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  // Broadcast which item we're holding
+  const item=inventory[i];
+  db.ref("claregame_players/"+currentUser).update({holding:item?item.defKey:null});
 }
 
-function updateInventoryUI() {
-    for(let i=0;i<5;i++){
-        const s=document.getElementById('slot-'+i);
-        const item=inventory[i];
-        s.innerHTML=item?item.emoji:'';
-        s.innerHTML+=`<span class="slot-label">${i+1}</span>`;
-        s.title=item?item.name:'';
-        s.classList.toggle('active',i===selectedSlot);
-        if(item?.defKey==='golden_apple') s.classList.add('golden'); else s.classList.remove('golden');
-    }
+function updateInventoryUI(){
+  for(let i=0;i<5;i++){
+    const s=document.getElementById('slot-'+i);
+    const item=inventory[i];
+    s.innerHTML=item?item.emoji:'';
+    s.innerHTML+=`<span class="sn">${i+1}</span>`;
+    if(item){const def=DEFS[item.defKey];if(def)s.innerHTML+=`<span class="si">${def.type==='weapon'?'⚔':'✦'}</span>`;}
+    s.classList.toggle('active',i===selectedSlot);
+    if(item?.defKey==='golden_apple') s.classList.add('golden-slot'); else s.classList.remove('golden-slot');
+  }
 }
 
-// passive effects from held items
-function applyPassiveEffects() {
-    let spd=1;
-    inventory.forEach(item=>{
-        if(!item) return;
-        const def=ITEM_DEFS[item.defKey];
-        if(def.special==='speed') spd=Math.max(spd,1.25);     // balloon
-        if(def.speed && def.speed>1) spd=Math.max(spd,def.speed); // katana
-    });
-    speedMult=spd;
+function applyPassiveEffects(){
+  // Only apply speed from selected slot item
+  const item=inventory[selectedSlot];
+  let spd=1;
+  if(item){
+    const def=DEFS[item.defKey];
+    if(def?.speedBonus) spd=def.speedBonus;
+  }
+  speedMult=spd;
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  PICKUP
-// ═══════════════════════════════════════════
-function tryPickup() {
-    const px=camera.position.x, pz=camera.position.z;
-    for(const spawn of SPAWN_TABLE){
-        if(pickedUpItems[spawn.id]) continue;
-        const m=worldItemMeshes[spawn.id];
-        if(!m) continue;
-        const dx=m.position.x-px, dz=m.position.z-pz;
-        if(Math.sqrt(dx*dx+dz*dz)<PICKUP_DIST){
-            const slot=inventory.indexOf(null);
-            if(slot===-1){ showNotif("Inventory full!"); return; }
-
-            const def=ITEM_DEFS[spawn.def];
-
-            // Consumable items — use immediately
-            if(def.type==='item' && ['heal','speed_burst','poison','golden'].includes(def.special)){
-                useConsumable(spawn, def);
-                db.ref("claregame_items/"+spawn.id).set({pickedBy:currentUser,time:Date.now()});
-                removeWorldItem(spawn.id);
-                pickedUpItems[spawn.id]=true;
-                sysChat(`${currentUser} picked up ${def.emoji} ${spawn.def}`);
-                return;
-            }
-
-            // Traps — place immediately where you picked them up? No — add to inv
-            inventory[slot]={id:spawn.id, defKey:spawn.def, emoji:def.emoji, name:spawn.def};
-            updateInventoryUI();
-            applyPassiveEffects();
-            db.ref("claregame_items/"+spawn.id).set({pickedBy:currentUser,time:Date.now()});
-            removeWorldItem(spawn.id);
-            pickedUpItems[spawn.id]=true;
-            showNotif(`Picked up ${def.emoji} ${spawn.def}`);
-            sysChat(`${currentUser} picked up ${def.emoji} ${spawn.def}`);
-            return;
-        }
+// ══════════════════════════════════════════════════════
+function tryPickup(){
+  const px=camera.position.x,pz=camera.position.z;
+  for(const [id,mesh] of Object.entries(worldItemMeshes)){
+    if(pickedUpItems[id]) continue;
+    const dx=mesh.position.x-px,dz=mesh.position.z-pz;
+    if(Math.sqrt(dx*dx+dz*dz)<PICKUP_DIST){
+      const slot=inventory.indexOf(null);
+      if(slot===-1){showNotif("Inventory full!");return;}
+      const defKey=mesh.userData.defKey;
+      const def=DEFS[defKey];
+      inventory[slot]={id,defKey,emoji:def.emoji,name:defKey};
+      updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+      db.ref("claregame_items/"+id).set({pickedBy:currentUser,time:Date.now()});
+      removeWorldItem(id); pickedUpItems[id]=true;
+      showNotif(`Picked up ${def.emoji} ${defKey}`);
+      sysChat(`${currentUser} picked up ${def.emoji} ${defKey}`);
+      return;
     }
-    // Also check dynamic dropped items
-    for(const [id, mesh] of Object.entries(worldItemMeshes)){
-        if(SPAWN_TABLE.find(s=>s.id===id)) continue; // already handled
-        const dx=mesh.position.x-px, dz=mesh.position.z-pz;
-        if(Math.sqrt(dx*dx+dz*dz)<PICKUP_DIST){
-            const slot=inventory.indexOf(null);
-            if(slot===-1){ showNotif("Inventory full!"); return; }
-            const {defKey}=mesh.userData;
-            const def=ITEM_DEFS[defKey];
-            inventory[slot]={id, defKey, emoji:def.emoji, name:defKey};
-            updateInventoryUI(); applyPassiveEffects();
-            removeWorldItem(id); pickedUpItems[id]=true;
-            db.ref("claregame_items/"+id).set({pickedBy:currentUser,time:Date.now()});
-            showNotif(`Picked up ${def.emoji} ${defKey}`);
-            return;
-        }
-    }
+  }
 }
 
-function useConsumable(spawn, def) {
-    if(def.special==='heal'){
-        myHP=Math.min(MAX_HP, myHP+def.value);
-        updateHealthUI();
-        showNotif(`${def.emoji} Healed +${def.value}hp!`);
-    } else if(def.special==='speed_burst'){
-        addStatus('⚡ Speed',def.value*1000);
-        speedMult=1.8;
-        showNotif('⚡ Speed boost!');
-        setTimeout(()=>{ speedMult=1; applyPassiveEffects(); removeStatus('⚡ Speed'); },def.value*1000);
-    } else if(def.special==='poison'){
-        // poison self (it's a trick!)
-        dealDamageToSelf(def.value,'Poison Apple','poison_apple',null);
-        showNotif('💀 It was poisoned!');
-    } else if(def.special==='golden'){
-        myHP=MAX_HP; updateHealthUI();
-        goldenImmune=true;
-        addStatus('✨ Immune',5000);
-        showNotif('✨ GOLDEN APPLE! Full heal + 5s immunity!');
-        sysChat(`✨ ${currentUser} used the Golden Apple!`);
-        setTimeout(()=>{ goldenImmune=false; removeStatus('✨ Immune'); },5000);
-        // remove golden apple from world for everyone
-        db.ref("claregame_items/g1").set({pickedBy:currentUser,time:Date.now()});
-        // respawn after 60 seconds
-        setTimeout(()=>{
-            db.ref("claregame_items/g1").remove();
-            if(pickedUpItems['g1']){ delete pickedUpItems['g1']; spawnItemMesh('g1','golden_apple',0,0); }
-            sysChat('✨ The Golden Apple has respawned!');
-        },60000);
-    }
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  DROP
-// ═══════════════════════════════════════════
-function tryDrop() {
-    const item=inventory[selectedSlot];
-    if(!item){ showNotif("Nothing to drop!"); return; }
-
-    // Count floor weapons/items
-    const floorCount=Object.keys(worldItemMeshes).length;
-    const def=ITEM_DEFS[item.defKey];
-    const isWeapon=def.type==='weapon';
-    let wCount=0,iCount=0;
-    Object.values(worldItemMeshes).forEach(m=>{
-        const d=ITEM_DEFS[m.userData.defKey];
-        if(d&&d.type==='weapon') wCount++; else iCount++;
-    });
-    if(isWeapon&&wCount>=MAX_FLOOR_WEAPONS){ showNotif("Too many weapons on ground! Disappeared."); inventory[selectedSlot]=null; updateInventoryUI(); applyPassiveEffects(); delete pickedUpItems[item.id]; db.ref("claregame_items/"+item.id).remove(); return; }
-    if(!isWeapon&&iCount>=MAX_FLOOR_ITEMS){ showNotif("Too many items on ground! Disappeared."); inventory[selectedSlot]=null; updateInventoryUI(); applyPassiveEffects(); delete pickedUpItems[item.id]; db.ref("claregame_items/"+item.id).remove(); return; }
-
-    const dropX=+(camera.position.x+Math.sin(yaw)*1.5).toFixed(2);
-    const dropZ=+(camera.position.z+Math.cos(yaw)*1.5).toFixed(2);
-
-    db.ref("claregame_items/"+item.id).remove();
-    const mesh=makeItemMesh(item.defKey);
-    mesh.position.set(dropX,0.4,dropZ);
-    mesh.userData={id:item.id,defKey:item.defKey,x:dropX,z:dropZ};
-    scene.add(mesh); worldItemMeshes[item.id]=mesh;
-    inventory[selectedSlot]=null;
-    delete pickedUpItems[item.id];
-    updateInventoryUI(); applyPassiveEffects();
-    showNotif(`Dropped ${item.emoji} ${item.defKey}`);
-    db.ref("claregame_drop").push({id:item.id,defKey:item.defKey,x:dropX,z:dropZ,by:currentUser,time:Date.now()});
+// ══════════════════════════════════════════════════════
+function tryDrop(){
+  const item=inventory[selectedSlot];
+  if(!item){showNotif("Nothing to drop!");return;}
+  const def=DEFS[item.defKey];
+  const isWeapon=def.type==='weapon';
+  let wCount=0,iCount=0;
+  Object.values(worldItemMeshes).forEach(m=>{const d=DEFS[m.userData.defKey];if(d?.type==='weapon')wCount++;else iCount++;});
+  if(isWeapon&&wCount>=MAX_FLOOR){showNotif("Too many weapons on ground!");inventory[selectedSlot]=null;updateInventoryUI();updateHandItem();applyPassiveEffects();delete pickedUpItems[item.id];db.ref("claregame_items/"+item.id).remove();return;}
+  if(!isWeapon&&iCount>=MAX_FLOOR){showNotif("Too many items on ground!");inventory[selectedSlot]=null;updateInventoryUI();updateHandItem();applyPassiveEffects();delete pickedUpItems[item.id];db.ref("claregame_items/"+item.id).remove();return;}
+  const dropX=+(camera.position.x+Math.sin(yaw)*1.8).toFixed(2);
+  const dropZ=+(camera.position.z+Math.cos(yaw)*1.8).toFixed(2);
+  db.ref("claregame_items/"+item.id).remove();
+  const mesh=buildItemMesh(item.defKey);
+  mesh.position.set(dropX,.5,dropZ);
+  mesh.userData={id:item.id,defKey:item.defKey,x:dropX,z:dropZ};
+  scene.add(mesh); worldItemMeshes[item.id]=mesh;
+  inventory[selectedSlot]=null; delete pickedUpItems[item.id];
+  updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  showNotif(`Dropped ${item.emoji} ${item.defKey}`);
+  db.ref("claregame_drop").push({id:item.id,defKey:item.defKey,x:dropX,z:dropZ,by:currentUser,time:Date.now()});
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  F KEY — use/attack/place trap
+// ══════════════════════════════════════════════════════
+function handleF(){
+  const item=inventory[selectedSlot];
+  if(!item){showNotif("Nothing selected.");return;}
+  const def=DEFS[item.defKey];
+  if(def.type==='weapon'){
+    if(def.special==='flail'){showNotif("Flail: flick mouse to swing!");return;}
+    tryAttack();
+  } else if(def.type==='consumable'){
+    useConsumable(item,def);
+  } else if(def.type==='trap'){
+    placeTrap(item,def);
+  } else if(def.type==='passive'){
+    showNotif(`${def.emoji} ${item.defKey} — effect active while selected`);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  CONSUMABLE USE
+// ══════════════════════════════════════════════════════
+function useConsumable(item,def){
+  if(def.special==='heal'){
+    myHP=Math.min(MAX_HP,myHP+def.value); updateHealthUI();
+    showNotif(`${def.emoji} Healed +${def.value}hp!`);
+  } else if(def.special==='speed_burst'){
+    speedMult=1.8; addStatus('⚡ Speed',def.value*1000);
+    showNotif('⚡ Speed boost for 10s!');
+    setTimeout(()=>{applyPassiveEffects();removeStatus('⚡ Speed');},def.value*1000);
+  } else if(def.special==='poison'){
+    dealDamageToSelf(def.value,'Poison Apple','poison',null);
+    showNotif('💀 It was poisoned!');
+  } else if(def.special==='golden'){
+    myHP=MAX_HP; updateHealthUI(); goldenImmune=true;
+    addStatus('✨ Immune',5000); showNotif('✨ Full heal + 5s immunity!');
+    sysChat(`✨ ${currentUser} ate the Golden Apple!`);
+    setTimeout(()=>{goldenImmune=false;removeStatus('✨ Immune');},5000);
+    db.ref("claregame_items/g1").set({pickedBy:currentUser,time:Date.now()});
+    setTimeout(()=>{db.ref("claregame_items/g1").remove();if(pickedUpItems['g1']){delete pickedUpItems['g1'];spawnItemMesh('g1','golden_apple',0,0);}sysChat('✨ Golden Apple respawned!');},60000);
+  }
+  // Remove from inventory after use
+  inventory[selectedSlot]=null; updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  delete pickedUpItems[item.id]; db.ref("claregame_items/"+item.id).remove();
+}
+
+// ══════════════════════════════════════════════════════
+//  TRAP PLACEMENT
+// ══════════════════════════════════════════════════════
+const placedTraps=[]; // {id,defKey,mesh,x,z,owner,placedAt,triggered}
+
+function placeTrap(item,def){
+  const px=+(camera.position.x+Math.sin(yaw)*1.5).toFixed(2);
+  const pz=+(camera.position.z+Math.cos(yaw)*1.5).toFixed(2);
+  const mesh=buildItemMesh(item.defKey);
+  mesh.position.set(px,.05,pz);
+  scene.add(mesh);
+  placedTraps.push({id:item.id,defKey:item.defKey,mesh,x:px,z:pz,owner:currentUser,placedAt:Date.now(),triggered:false});
+  // Broadcast placement
+  db.ref("claregame_traps/"+item.id).set({defKey:item.defKey,x:px,z:pz,by:currentUser,time:Date.now()});
+  inventory[selectedSlot]=null; updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  delete pickedUpItems[item.id]; db.ref("claregame_items/"+item.id).remove();
+  showNotif(`${def.emoji} Trap placed!`);
+  // Auto-remove after lifetime
+  setTimeout(()=>removeTrap(item.id),def.trapLife);
+}
+
+function removeTrap(id){
+  const idx=placedTraps.findIndex(t=>t.id===id);
+  if(idx===-1) return;
+  scene.remove(placedTraps[idx].mesh);
+  placedTraps.splice(idx,1);
+  db.ref("claregame_traps/"+id).remove();
+}
+
+function checkTraps(){
+  const px=camera.position.x,pz=camera.position.z;
+  placedTraps.forEach(trap=>{
+    if(trap.owner===currentUser||trap.triggered) return;
+    const dx=trap.x-px,dz=trap.z-pz;
+    const def=DEFS[trap.defKey];
+    if(Math.sqrt(dx*dx+dz*dz)<(def.trapRadius||1.5)){
+      if(def.special==='trap'){
+        trap.triggered=true;
+        dealDamageToSelf(def.trapDmg,'Bear Trap','bear_trap',trap.owner);
+        addStatus('🐢 Slowed',def.trapSlowDur);
+        const orig=speedMult; speedMult=def.trapSlow;
+        setTimeout(()=>{speedMult=orig;applyPassiveEffects();removeStatus('🐢 Slowed');},def.trapSlowDur);
+        showNotif('🪤 Bear Trap!'); removeTrap(trap.id);
+      } else if(def.special==='web'){
+        if(!trap._webActive){
+          trap._webActive=true;
+          addStatus('🕸 Webbed',def.trapSlowDur);
+          const orig=speedMult; speedMult=def.trapSlow;
+          showNotif('🕸️ Webbed!');
+          setTimeout(()=>{speedMult=orig;applyPassiveEffects();removeStatus('🕸 Webbed');trap._webActive=false;},def.trapSlowDur);
+        }
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════
 //  ATTACK
-// ═══════════════════════════════════════════
-function tryAttack() {
-    if(!pvpMode){ showNotif('PVP is OFF'); return; }
-    const now=Date.now();
-    const item=inventory[selectedSlot];
-    if(!item){ showNotif('Equip a weapon!'); return; }
-    const def=ITEM_DEFS[item.defKey];
-    if(!def||def.type!=='weapon'){ showNotif('That is not a weapon!'); return; }
-    if(def.special==='flail'){ showNotif('Flail: flick mouse to swing!'); return; }
-    if(now-lastAttackTime<def.cooldown){
-        showNotif(`⏱ ${((def.cooldown-(now-lastAttackTime))/1000).toFixed(1)}s cooldown`);
-        return;
-    }
-    lastAttackTime=now;
+// ══════════════════════════════════════════════════════
+function tryAttack(){
+  if(!pvpMode){showNotif('PVP is OFF');return;}
+  const now=Date.now();
+  const item=inventory[selectedSlot];
+  if(!item) return;
+  const def=DEFS[item.defKey];
+  if(!def||def.type!=='weapon') return;
+  if(now-lastAttackTime<def.cooldown){showNotif(`⏱ ${((def.cooldown-(now-lastAttackTime))/1000).toFixed(1)}s`);return;}
+  lastAttackTime=now;
 
-    if(def.special==='projectile'){
-        fireProjectile(def, item.defKey);
-        return;
-    }
+  if(def.special==='projectile'){fireProjectile(def,item.defKey);return;}
 
-    // Melee
-    const px=camera.position.x, pz=camera.position.z;
-    let hit=false;
+  // Melee swing animation on hand mesh
+  playSwingAnim(def.special);
+  const px=camera.position.x,pz=camera.position.z;
+  let hit=false;
+  Object.entries(otherPlayers).forEach(([u,op])=>{
+    const dx=op.mesh.position.x-px,dz=op.mesh.position.z-pz;
+    if(Math.sqrt(dx*dx+dz*dz)<def.range){
+      sendHit(u,def.damage,item.defKey);
+      if(def.special==='bleed') sendBleed(u,10,5);
+      hit=true; flashMesh(op.mesh,0xffff00);
+    }
+  });
+  if(!hit) showNotif('No one in range!');
+}
+
+function sendHit(target,dmg,weapon){
+  db.ref("claregame_hits/"+target).set({from:currentUser,weapon,dmg,time:Date.now()});
+  showNotif(`⚔️ Hit ${target}! (-${dmg}hp)`);
+}
+function sendBleed(target,total,secs){
+  db.ref("claregame_bleed/"+target).set({from:currentUser,dps:total/secs,secs,time:Date.now()});
+}
+
+function fireProjectile(def,defKey){
+  const geo=new THREE.SphereGeometry(.06,6,6);
+  const mat=new THREE.MeshBasicMaterial({color:defKey==='bow'?0xffaa00:0x00ccff});
+  const mesh=new THREE.Mesh(geo,mat);
+  // Add a glowing trail cylinder
+  const trail=new THREE.Mesh(new THREE.CylinderGeometry(.02,.005,.15,4),new THREE.MeshBasicMaterial({color:defKey==='bow'?0xff6600:0x0088ff,transparent:true,opacity:.5}));
+  trail.rotation.x=Math.PI/2; trail.position.z=.1;
+  mesh.add(trail);
+  mesh.position.copy(camera.position); mesh.position.y=PLAYER_HEIGHT*.85;
+  const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+  scene.add(mesh);
+  projectiles.push({mesh,vel:dir.multiplyScalar(def.projSpeed),owner:currentUser,dmg:def.damage,weapon:defKey,born:Date.now(),hit:false});
+}
+
+// ══════════════════════════════════════════════════════
+//  FLAIL PHYSICS
+// ══════════════════════════════════════════════════════
+let flailLastFire=0;
+function checkFlailSwing(absMovX,movX){
+  const item=inventory[selectedSlot];
+  if(!item||item.defKey!=='flail') return;
+  // Add velocity proportional to mouse speed
+  flailVel+=movX*.01;
+  flailVel*=.85; // damping
+  flailAngle+=flailVel;
+  // Update hand mesh rotation to show swinging
+  if(handItemMesh){
+    handItemMesh.rotation.z=flailAngle*.6;
+    handItemMesh.rotation.x=Math.abs(flailVel)*2;
+  }
+  // If moving fast enough — deal damage
+  const now=Date.now();
+  if(Math.abs(flailVel)>.18&&pvpMode&&now-flailLastFire>600){
+    flailLastFire=now;
+    const px=camera.position.x,pz=camera.position.z;
     Object.entries(otherPlayers).forEach(([u,op])=>{
-        const dx=op.mesh.position.x-px, dz=op.mesh.position.z-pz;
-        if(Math.sqrt(dx*dx+dz*dz)<def.range){
-            sendHit(u, def.damage, item.defKey);
-            if(def.special==='bleed') sendBleed(u, 10, 5, item.defKey);
-            hit=true;
-            flashMesh(op.mesh,0xffff00);
-        }
+      const dx=op.mesh.position.x-px,dz=op.mesh.position.z-pz;
+      if(Math.sqrt(dx*dx+dz*dz)<4.5){
+        sendHit(u,40,'flail'); flashMesh(op.mesh,0xff8800);
+        showNotif(`⚙️ Flail hit ${u}! (-40hp)`);
+      }
     });
-    if(!hit) showNotif('No one in range!');
-    else playAttackAnim(def.special);
+  }
 }
 
-function sendHit(target, dmg, weapon) {
-    db.ref("claregame_hits/"+target).set({from:currentUser,weapon,dmg,time:Date.now()});
-    showNotif(`⚔️ Hit ${target}! (-${dmg}hp)`);
+// ══════════════════════════════════════════════════════
+//  SWING ANIMATION
+// ══════════════════════════════════════════════════════
+function playSwingAnim(type){
+  if(!handItemMesh) return;
+  const orig={x:handItemMesh.rotation.x,y:handItemMesh.rotation.y,z:handItemMesh.rotation.z};
+  if(type==='slash'){
+    handItemMesh.rotation.z=-1.2;
+    setTimeout(()=>{if(handItemMesh){handItemMesh.rotation.z=orig.z;}},200);
+  } else if(type==='poke'){
+    handItemMesh.position.z-=.18;
+    setTimeout(()=>{if(handItemMesh){handItemMesh.position.z+=.18;}},150);
+  }
+  // crosshair flash
+  const ch=document.getElementById('crosshair');
+  ch.style.transform='translate(-50%,-50%) scale(2)';ch.style.opacity='.3';
+  setTimeout(()=>{ch.style.transform='translate(-50%,-50%) scale(1)';ch.style.opacity='1';},200);
 }
 
-function sendBleed(target, totalDmg, seconds, weapon) {
-    db.ref("claregame_bleed/"+target).set({from:currentUser,weapon,dmgPerSec:totalDmg/seconds,seconds,time:Date.now()});
+function flashMesh(mesh,color){
+  mesh.traverse(c=>{if(c.isMesh&&c.material?.color){c.material._orig=c.material.color.getHex();c.material.color.set(color);}});
+  setTimeout(()=>{mesh.traverse(c=>{if(c.isMesh&&c.material?.color&&c.material._orig!==undefined) c.material.color.set(c.material._orig);});},160);
 }
 
-function fireProjectile(def, defKey) {
-    const geo=new THREE.SphereGeometry(0.08,6,6);
-    const mat=new THREE.MeshBasicMaterial({color:defKey==='bow'?0xffaa00:0x00aaff});
-    const mesh=new THREE.Mesh(geo,mat);
-    mesh.position.copy(camera.position);
-    mesh.position.y=PLAYER_HEIGHT*0.8;
-
-    const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
-    scene.add(mesh);
-    projectiles.push({mesh,vel:dir.multiplyScalar(def.projSpeed),owner:currentUser,dmg:def.damage,weapon:defKey,born:Date.now(),hit:false});
-    showNotif(`${ITEM_DEFS[defKey].emoji} Fired!`);
-}
-
-// Flail — triggered by fast mouse flick
-let flailLastCheck=0;
-function checkFlailSwing(movementX) {
-    const item=inventory[selectedSlot];
-    if(!item||item.defKey!=='flail') return;
-    if(!pvpMode) return;
-    const now=Date.now();
-    if(now-flailLastCheck<500) return; // don't spam
-    if(movementX>20){ // threshold for "flick"
-        flailLastCheck=now;
-        const px=camera.position.x, pz=camera.position.z;
-        Object.entries(otherPlayers).forEach(([u,op])=>{
-            const dx=op.mesh.position.x-px, dz=op.mesh.position.z-pz;
-            if(Math.sqrt(dx*dx+dz*dz)<4.0){
-                sendHit(u,40,'flail');
-                flashMesh(op.mesh,0xff8800);
-            }
-        });
-    }
-}
-
-function playAttackAnim(type) {
-    // Visual flash on crosshair
-    const ch=document.getElementById('crosshair');
-    ch.style.transform='translate(-50%,-50%) scale(1.8)';
-    ch.style.opacity='0.4';
-    setTimeout(()=>{ ch.style.transform='translate(-50%,-50%) scale(1)'; ch.style.opacity='1'; },200);
-}
-
-function flashMesh(mesh, color) {
-    mesh.traverse(c=>{ if(c.isMesh&&c.material&&c.material.color){ c.material._orig=c.material.color.getHex(); c.material.color.set(color); } });
-    setTimeout(()=>{ mesh.traverse(c=>{ if(c.isMesh&&c.material&&c.material.color&&c.material._orig!==undefined) c.material.color.set(c.material._orig); }); },160);
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  PVP
-// ═══════════════════════════════════════════
-function initPVP() {
-    // Listen for hits on self
-    db.ref("claregame_hits/"+currentUser).on("value",snap=>{
-        if(!snap.exists()) return;
-        const hit=snap.val();
-        if(Date.now()-hit.time>3000) return;
-        if(!pvpMode||goldenImmune) return;
-        dealDamageToSelf(hit.dmg, hit.weapon, hit.weapon, hit.from);
-        db.ref("claregame_hits/"+currentUser).remove();
+// ══════════════════════════════════════════════════════
+function initPVP(){
+  db.ref("claregame_hits/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const h=snap.val(); if(Date.now()-h.time>3000) return;
+    if(!pvpMode||goldenImmune) return;
+    dealDamageToSelf(h.dmg,h.weapon,h.weapon,h.from);
+    db.ref("claregame_hits/"+currentUser).remove();
+  });
+  db.ref("claregame_bleed/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const b=snap.val(); if(Date.now()-b.time>3000||!pvpMode||goldenImmune) return;
+    applyBleed(b.dps,b.secs,b.from); db.ref("claregame_bleed/"+currentUser).remove();
+  });
+  db.ref("claregame_pvp").on("value",snap=>{pvpMode=snap.val()===true;updatePVPUI();});
+  db.ref("claregame_hp").on("value",snap=>{
+    snap.forEach(c=>{if(c.key!==currentUser&&otherPlayers[c.key]) otherPlayers[c.key].hp=c.val();});
+  });
+  // Listen to other players' held items
+  db.ref("claregame_players").on("value",snap=>{
+    snap.forEach(c=>{
+      const u=c.key; if(u===currentUser||!otherPlayers[u]) return;
+      const holding=c.val()?.holding||null;
+      if(otherPlayers[u]._lastHolding!==holding){
+        otherPlayers[u]._lastHolding=holding;
+        updateOtherHand(u,holding);
+      }
     });
-    // Listen for bleed on self
-    db.ref("claregame_bleed/"+currentUser).on("value",snap=>{
-        if(!snap.exists()) return;
-        const b=snap.val();
-        if(Date.now()-b.time>3000) return;
-        if(!pvpMode||goldenImmune) return;
-        applyBleed(b.dmgPerSec, b.seconds, b.from);
-        db.ref("claregame_bleed/"+currentUser).remove();
+  });
+  // Listen for traps placed by others
+  db.ref("claregame_traps").on("value",snap=>{
+    snap.forEach(c=>{
+      const id=c.key; const d=c.val();
+      if(d.by===currentUser) return; // already placed locally
+      if(!placedTraps.find(t=>t.id===id)){
+        const mesh=buildItemMesh(d.defKey);
+        mesh.position.set(d.x,.05,d.z); scene.add(mesh);
+        placedTraps.push({id,defKey:d.defKey,mesh,x:d.x,z:d.z,owner:d.by,placedAt:Date.now(),triggered:false});
+      }
     });
-    // PVP toggle
-    db.ref("claregame_pvp").on("value",snap=>{
-        pvpMode=snap.val()===true;
-        updatePVPUI();
+  });
+  db.ref("claregame_drop").limitToLast(50).on("value",snap=>{
+    snap.forEach(c=>{
+      const d=c.val();
+      if(d.by===currentUser) return;
+      if(!worldItemMeshes[d.id]&&!pickedUpItems[d.id]){
+        const mesh=buildItemMesh(d.defKey);
+        mesh.position.set(d.x,.5,d.z);
+        mesh.userData={id:d.id,defKey:d.defKey,x:d.x,z:d.z};
+        scene.add(mesh); worldItemMeshes[d.id]=mesh;
+      }
     });
-    // Other players' HP for overhead bars
-    db.ref("claregame_hp").on("value",snap=>{
-        snap.forEach(c=>{
-            const u=c.key; if(u===currentUser) return;
-            if(otherPlayers[u]) otherPlayers[u].hp=c.val();
-        });
-    });
-    // Listen for drops
-    db.ref("claregame_drop").limitToLast(50).on("value",snap=>{
-        snap.forEach(c=>{
-            const d=c.val();
-            if(d.by===currentUser) return; // already handled locally
-            if(!worldItemMeshes[d.id]&&!pickedUpItems[d.id]){
-                const mesh=makeItemMesh(d.defKey);
-                mesh.position.set(d.x,0.4,d.z);
-                mesh.userData={id:d.id,defKey:d.defKey,x:d.x,z:d.z};
-                scene.add(mesh); worldItemMeshes[d.id]=mesh;
-            }
-        });
-    });
+  });
 }
 
-function dealDamageToSelf(dmg, weaponName, defKey, from) {
-    myHP=Math.max(0,myHP-dmg);
-    updateHealthUI();
-    const fromStr=from?` from ${from}`:'';
-    showNotif(`💥 Hit by ${weaponName}${fromStr} (-${dmg}hp)`);
-    const flash=document.createElement('div');
-    flash.style.cssText='position:fixed;inset:0;background:rgba(235,77,75,0.3);pointer-events:none;z-index:9000;';
-    document.body.appendChild(flash);
-    setTimeout(()=>flash.remove(),200);
-    // publish HP
-    db.ref("claregame_hp/"+currentUser).set(myHP);
-    if(myHP<=0) handleDeath(from||'unknown');
+function dealDamageToSelf(dmg,weaponName,defKey,from){
+  myHP=Math.max(0,myHP-dmg); updateHealthUI();
+  showNotif(`💥 ${weaponName}${from?' from '+from:''} (-${dmg}hp)`);
+  const f=document.createElement('div');
+  f.style.cssText='position:fixed;inset:0;background:rgba(235,77,75,.28);pointer-events:none;z-index:9000;';
+  document.body.appendChild(f); setTimeout(()=>f.remove(),180);
+  db.ref("claregame_hp/"+currentUser).set(myHP);
+  if(myHP<=0) handleDeath(from||'unknown');
 }
 
-function applyBleed(dmgPerSec, seconds, from) {
-    addStatus('🩸 Bleed',seconds*1000);
-    let elapsed=0;
-    const iv=setInterval(()=>{
-        if(elapsed>=seconds||myHP<=0){ clearInterval(iv); removeStatus('🩸 Bleed'); return; }
-        dealDamageToSelf(dmgPerSec,'Bleed','spear',from);
-        elapsed++;
-    },1000);
+function applyBleed(dps,secs,from){
+  addStatus('🩸 Bleed',secs*1000); let t=0;
+  const iv=setInterval(()=>{if(t>=secs||myHP<=0){clearInterval(iv);removeStatus('🩸 Bleed');return;}dealDamageToSelf(dps,'Bleed','spear',from);t++;},1000);
 }
 
-function togglePVP() {
-    db.ref("claregame_pvp").set(!pvpMode);
+function togglePVP(){db.ref("claregame_pvp").set(!pvpMode);}
+function updatePVPUI(){
+  const btn=document.getElementById('pvp-btn');
+  const ind=document.getElementById('pvp-indicator');
+  if(pvpMode){btn.style.background='#eb4d4b';btn.innerText='⚔️ PVP: ON';ind.style.display='block';}
+  else{btn.style.background='#2f3542';btn.innerText='⚔️ PVP: OFF';ind.style.display='none';}
 }
+function updateHealthUI(){
+  document.getElementById('hp-val').innerText=myHP;
+  const p=myHP/MAX_HP*100;
+  const fill=document.getElementById('hp-fill');
+  fill.style.width=p+'%';
+  fill.style.background=p>60?'var(--primary)':p>30?'#f39c12':'#eb4d4b';
+}
+function addStatus(label,ms){
+  removeStatus(label);
+  const el=document.createElement('div'); el.className='status-tag';
+  el.innerText=label; el.id='st_'+label.replace(/\W/g,'_');
+  document.getElementById('status-effects').appendChild(el);
+  if(ms) setTimeout(()=>el.remove(),ms);
+}
+function removeStatus(label){const el=document.getElementById('st_'+label.replace(/\W/g,'_'));if(el)el.remove();}
 
-function updatePVPUI() {
-    const btn=document.getElementById('pvp-btn');
-    const ind=document.getElementById('pvp-indicator');
-    if(pvpMode){
-        btn.style.background='#eb4d4b'; btn.innerText='⚔️ PVP: ON';
-        ind.style.display='block';
-    } else {
-        btn.style.background='#2f3542'; btn.innerText='⚔️ PVP: OFF';
-        ind.style.display='none';
-    }
-}
-
-function updateHealthUI() {
-    document.getElementById('hp-val').innerText=myHP;
-    const pct=myHP/MAX_HP*100;
-    const fill=document.getElementById('hp-fill');
-    fill.style.width=pct+'%';
-    fill.style.background=pct>60?'var(--primary)':pct>30?'#f39c12':'#eb4d4b';
-}
-
-function addStatus(label,ms) {
-    const el=document.createElement('div');
-    el.className='status-tag'; el.innerText=label; el.id='st_'+label.replace(/\s/g,'_');
-    document.getElementById('status-effects').appendChild(el);
-    setTimeout(()=>el.remove(),ms);
-}
-function removeStatus(label) {
-    const el=document.getElementById('st_'+label.replace(/\s/g,'_'));
-    if(el) el.remove();
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  DEATH
-// ═══════════════════════════════════════════
-function handleDeath(killedBy) {
-    myHP=MAX_HP; updateHealthUI(); goldenImmune=false;
-    // Respawn at random spot
-    camera.position.set((Math.random()-0.5)*30, PLAYER_HEIGHT, (Math.random()-0.5)*30);
-
-    // Drop all inventory scattered AROUND death position, not on same spot
-    inventory.forEach((item,i)=>{
-        if(!item) return;
-        const angle=Math.random()*Math.PI*2;
-        const dist=1.5+Math.random()*2;
-        const dx=camera.position.x+Math.cos(angle)*dist;
-        const dz=camera.position.z+Math.sin(angle)*dist;
-        inventory[i]=null;
-        const mesh=makeItemMesh(item.defKey);
-        mesh.position.set(dx,0.4,dz);
-        mesh.userData={id:item.id,defKey:item.defKey,x:dx,z:dz};
-        scene.add(mesh); worldItemMeshes[item.id]=mesh;
-        delete pickedUpItems[item.id];
-        db.ref("claregame_items/"+item.id).remove();
-        db.ref("claregame_drop").push({id:item.id,defKey:item.defKey,x:dx,z:dz,by:currentUser,time:Date.now()});
-    });
-
-    updateInventoryUI(); applyPassiveEffects();
-    sysChat(`💀 ${currentUser} was slain by ${killedBy}!`);
-    showNotif(`💀 Killed by ${killedBy}! Respawned.`);
-    db.ref("claregame_hp/"+currentUser).set(MAX_HP);
+// ══════════════════════════════════════════════════════
+function handleDeath(killedBy){
+  myHP=MAX_HP; updateHealthUI(); goldenImmune=false;
+  // Respawn
+  camera.position.set((Math.random()-.5)*30,PLAYER_HEIGHT,(Math.random()-.5)*30);
+  // Drop items scattered around DEATH position (before respawn changes camera)
+  const deathX=camera.position.x, deathZ=camera.position.z;
+  inventory.forEach((item,i)=>{
+    if(!item) return;
+    const angle=Math.random()*Math.PI*2, dist=1.5+Math.random()*2.5;
+    const dx=+(deathX+Math.cos(angle)*dist).toFixed(2);
+    const dz=+(deathZ+Math.sin(angle)*dist).toFixed(2);
+    inventory[i]=null;
+    const mesh=buildItemMesh(item.defKey);
+    mesh.position.set(dx,.5,dz); mesh.userData={id:item.id,defKey:item.defKey,x:dx,z:dz};
+    scene.add(mesh); worldItemMeshes[item.id]=mesh; delete pickedUpItems[item.id];
+    db.ref("claregame_items/"+item.id).remove();
+    db.ref("claregame_drop").push({id:item.id,defKey:item.defKey,x:dx,z:dz,by:currentUser,time:Date.now()});
+  });
+  updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  sysChat(`💀 ${currentUser} was slain by ${killedBy}!`);
+  showNotif(`💀 Killed by ${killedBy}! Respawned.`);
+  db.ref("claregame_hp/"+currentUser).set(MAX_HP);
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  RESET ITEMS
-// ═══════════════════════════════════════════
-function resetAllItems() {
-    if(currentUser!=='bartelsfamily5') return;
-    if(!confirm('Reset ALL items?')) return;
-    db.ref("claregame_items").remove();
-    db.ref("claregame_drop").remove();
-    Object.values(worldItemMeshes).forEach(m=>scene.remove(m));
-    worldItemMeshes={}; pickedUpItems={};
-    inventory=[null,null,null,null,null]; updateInventoryUI(); applyPassiveEffects();
-    spawnAllItems();
-    sysChat('🔄 bartelsfamily5 reset all items!');
-    showNotif('All items reset!');
+// ══════════════════════════════════════════════════════
+function resetAllItems(){
+  if(currentUser!=='bartelsfamily5') return;
+  if(!confirm('Reset ALL items?')) return;
+  db.ref("claregame_items").remove(); db.ref("claregame_drop").remove(); db.ref("claregame_traps").remove();
+  Object.values(worldItemMeshes).forEach(m=>scene.remove(m));
+  placedTraps.forEach(t=>scene.remove(t.mesh)); placedTraps.length=0;
+  worldItemMeshes={}; pickedUpItems={};
+  inventory=[null,null,null,null,null]; updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  spawnAllItems(); sysChat('🔄 bartelsfamily5 reset all items!'); showNotif('All items reset!');
 }
 
-// ═══════════════════════════════════════════
-//  AUTO SPAWN NEW WEAPON EVERY MINUTE
-// ═══════════════════════════════════════════
-function startAutoSpawn() {
-    setInterval(()=>{
-        const wCount=Object.values(worldItemMeshes).filter(m=>ITEM_DEFS[m.userData.defKey]?.type==='weapon').length;
-        if(wCount>=MAX_FLOOR_WEAPONS) return;
-        const weapons=Object.keys(ITEM_DEFS).filter(k=>ITEM_DEFS[k].type==='weapon');
-        const pick=weapons[Math.floor(Math.random()*weapons.length)];
-        const x=(Math.random()-0.5)*60, z=(Math.random()-0.5)*60;
-        const id='auto_'+Date.now();
-        const mesh=makeItemMesh(pick);
-        mesh.position.set(x,0.4,z);
-        mesh.userData={id,defKey:pick,x,z};
-        scene.add(mesh); worldItemMeshes[id]=mesh;
-        sysChat(`⚔️ A ${ITEM_DEFS[pick].emoji} ${pick} appeared!`);
-    },60000);
+// ══════════════════════════════════════════════════════
+//  AUTO SPAWN (weapon every 60s)
+// ══════════════════════════════════════════════════════
+function startAutoSpawn(){
+  setInterval(()=>{
+    const wTypes=['sword','dagger','katana','spear','flail','bow','crossbow'];
+    const wCount=Object.values(worldItemMeshes).filter(m=>DEFS[m.userData.defKey]?.type==='weapon').length;
+    if(wCount>=MAX_FLOOR) return;
+    const pick=wTypes[Math.floor(Math.random()*wTypes.length)];
+    const x=(Math.random()-.5)*50,z=(Math.random()-.5)*50;
+    const id='auto_'+Date.now();
+    const mesh=buildItemMesh(pick);
+    mesh.position.set(x,.5,z); mesh.userData={id,defKey:pick,x,z};
+    scene.add(mesh); worldItemMeshes[id]=mesh;
+    sysChat(`⚔️ A ${DEFS[pick].emoji} ${pick} appeared!`);
+  },60000);
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  FIREBASE LISTENERS
-// ═══════════════════════════════════════════
-function initFirebase() {
-    // Chat
-    db.ref("claregame_chat").limitToLast(25).on("value",snap=>{
-        const panel=document.getElementById('chat-log'); panel.innerHTML='';
-        snap.forEach(c=>{
-            const d=c.val(); const div=document.createElement('div'); div.className='chat-line';
-            const isSys=d.username==='SYSTEM';
-            div.innerHTML=`<span class="cname ${isSys?'sys':''}">${d.username}</span>${d.text}`;
-            panel.appendChild(div);
-        });
-        panel.scrollTop=panel.scrollHeight;
-        snap.forEach(c=>{
-            const d=c.val();
-            if(d.username!=='SYSTEM'&&Date.now()-d.time<5000) showBubble(d.username,d.text);
-        });
+// ══════════════════════════════════════════════════════
+function initFirebase(){
+  db.ref("claregame_chat").limitToLast(25).on("value",snap=>{
+    const panel=document.getElementById('chat-log'); panel.innerHTML='';
+    snap.forEach(c=>{
+      const d=c.val(); const div=document.createElement('div'); div.className='chat-line';
+      const isSys=d.username==='SYSTEM';
+      div.innerHTML=`<span class="cn ${isSys?'sys':''}">${d.username}</span>${d.text}`;
+      panel.appendChild(div);
     });
-
-    // Other players
-    db.ref("claregame_players").on("value",snap=>{
-        const alive={};
-        snap.forEach(c=>{
-            const u=c.key; if(u===currentUser) return;
-            alive[u]=true; const d=c.val();
-            if(!otherPlayers[u]){
-                const hue=Math.abs(hashCode(u))%360;
-                const color=new THREE.Color(`hsl(${hue},70%,55%)`);
-                const mesh=makePlayerMesh(color.getHex());
-                scene.add(mesh);
-                // Overhead HP bar
-                const hpEl=document.createElement('div'); hpEl.className='overhead-hp';
-                const hpBar=document.createElement('div'); hpBar.className='overhead-hp-bar';
-                const hpFill=document.createElement('div'); hpFill.className='overhead-hp-fill'; hpFill.style.width='100%';
-                hpBar.appendChild(hpFill); hpEl.appendChild(hpBar); document.body.appendChild(hpEl);
-                otherPlayers[u]={mesh,nameEl:null,hpEl,hpFill,hp:MAX_HP,color:color.getHex()};
-            }
-            otherPlayers[u].mesh.position.set(d.x,0,d.z);
-            otherPlayers[u].mesh.rotation.y=d.yaw||0;
-        });
-        Object.keys(otherPlayers).forEach(u=>{
-            if(!alive[u]){
-                scene.remove(otherPlayers[u].mesh);
-                if(otherPlayers[u].nameEl) otherPlayers[u].nameEl.remove();
-                if(otherPlayers[u].hpEl)   otherPlayers[u].hpEl.remove();
-                delete otherPlayers[u];
-            }
-        });
+    panel.scrollTop=panel.scrollHeight;
+    snap.forEach(c=>{
+      const d=c.val();
+      if(d.username!=='SYSTEM'&&Date.now()-d.time<5000) showBubble(d.username,d.text);
     });
+  });
 
-    // Items picked up by others
-    db.ref("claregame_items").on("value",snap=>{
-        snap.forEach(c=>{
-            const id=c.key;
-            if(!pickedUpItems[id]){ pickedUpItems[id]=true; removeWorldItem(id); }
-        });
+  db.ref("claregame_players").on("value",snap=>{
+    const alive={};
+    snap.forEach(c=>{
+      const u=c.key; if(u===currentUser) return;
+      alive[u]=true; const d=c.val();
+      if(!otherPlayers[u]){
+        const hue=Math.abs(hashCode(u))%360;
+        const color=new THREE.Color(`hsl(${hue},70%,55%)`);
+        const mesh=makePlayerMesh(color.getHex());
+        scene.add(mesh);
+        const hpEl=document.createElement('div'); hpEl.className='oh-hp';
+        const hpBar=document.createElement('div'); hpBar.className='oh-hp-bar';
+        const hpFill=document.createElement('div'); hpFill.className='oh-hp-fill'; hpFill.style.width='100%';
+        hpBar.appendChild(hpFill); hpEl.appendChild(hpBar); document.body.appendChild(hpEl);
+        otherPlayers[u]={mesh,nameEl:null,hpEl,hpFill,hp:MAX_HP,_lastHolding:null};
+      }
+      otherPlayers[u].mesh.position.set(d.x,0,d.z);
+      otherPlayers[u].mesh.rotation.y=d.yaw||0;
     });
+    Object.keys(otherPlayers).forEach(u=>{
+      if(!alive[u]){
+        scene.remove(otherPlayers[u].mesh);
+        if(otherPlayers[u].nameEl) otherPlayers[u].nameEl.remove();
+        if(otherPlayers[u].hpEl)   otherPlayers[u].hpEl.remove();
+        delete otherPlayers[u];
+      }
+    });
+  });
 
-    // Broadcast position + HP
-    setInterval(()=>{
-        if(!currentUser||!camera) return;
-        db.ref("claregame_players/"+currentUser).set({
-            x:+camera.position.x.toFixed(2), z:+camera.position.z.toFixed(2),
-            yaw:+yaw.toFixed(3), t:Date.now()
-        });
-        db.ref("claregame_hp/"+currentUser).set(myHP);
-    },100);
+  db.ref("claregame_items").on("value",snap=>{
+    snap.forEach(c=>{
+      const id=c.key;
+      if(!pickedUpItems[id]){pickedUpItems[id]=true;removeWorldItem(id);}
+    });
+  });
 
-    db.ref("claregame_players/"+currentUser).onDisconnect().remove();
-    db.ref("claregame_hp/"+currentUser).onDisconnect().remove();
+  setInterval(()=>{
+    if(!currentUser||!camera) return;
+    const item=inventory[selectedSlot];
+    db.ref("claregame_players/"+currentUser).update({
+      x:+camera.position.x.toFixed(2),z:+camera.position.z.toFixed(2),
+      yaw:+yaw.toFixed(3),t:Date.now(),
+      holding:item?item.defKey:null
+    });
+    db.ref("claregame_hp/"+currentUser).set(myHP);
+  },100);
+
+  db.ref("claregame_players/"+currentUser).onDisconnect().remove();
+  db.ref("claregame_hp/"+currentUser).onDisconnect().remove();
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  SPEECH BUBBLES
-// ═══════════════════════════════════════════
-function showBubble(username, text) {
-    if(bubbles[username]){ clearTimeout(bubbles[username].timer); bubbles[username].el.innerText=text; }
-    else {
-        const el=document.createElement('div'); el.className='overhead-bubble'; el.innerText=text;
-        document.body.appendChild(el); bubbles[username]={el};
-    }
-    bubbles[username].timer=setTimeout(()=>{ if(bubbles[username]){bubbles[username].el.remove();delete bubbles[username];} },5000);
+// ══════════════════════════════════════════════════════
+function showBubble(u,text){
+  if(bubbles[u]){clearTimeout(bubbles[u].timer);bubbles[u].el.innerText=text;}
+  else{const el=document.createElement('div');el.className='oh-bubble';el.innerText=text;document.body.appendChild(el);bubbles[u]={el};}
+  bubbles[u].timer=setTimeout(()=>{if(bubbles[u]){bubbles[u].el.remove();delete bubbles[u];}},5000);
 }
 
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  GAME LOOP
-// ═══════════════════════════════════════════
-function animate() {
-    requestAnimationFrame(animate);
-    const dt=clock.getDelta();
-    if(!chatting) movePlayer(dt);
+// ══════════════════════════════════════════════════════
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta();
+  if(!chatting) movePlayer(dt);
 
-    // Projectiles
-    for(let i=projectiles.length-1;i>=0;i--){
-        const p=projectiles[i];
-        p.mesh.position.addScaledVector(p.vel,dt);
-        p.mesh.position.y=Math.max(0.5, p.mesh.position.y-dt*0.5); // slight drop
-
-        // Check hit on other players
-        if(pvpMode){
-            Object.entries(otherPlayers).forEach(([u,op])=>{
-                if(p.hit) return;
-                const dx=op.mesh.position.x-p.mesh.position.x;
-                const dz=op.mesh.position.z-p.mesh.position.z;
-                if(Math.sqrt(dx*dx+dz*dz)<1.0){
-                    sendHit(u,p.dmg,p.weapon);
-                    flashMesh(op.mesh,0xffff00);
-                    p.hit=true;
-                    // Arrow stays in player until death/60s
-                    op.mesh.add(p.mesh);
-                    p.mesh.position.set(0,1.3,0);
-                    setTimeout(()=>{ if(p.mesh.parent) p.mesh.parent.remove(p.mesh); scene.remove(p.mesh); },60000);
-                    projectiles.splice(i,1);
-                }
-            });
+  // Projectiles
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p=projectiles[i];
+    p.mesh.position.addScaledVector(p.vel,dt);
+    p.mesh.position.y=Math.max(.4,p.mesh.position.y-dt*.3);
+    if(pvpMode&&!p.hit){
+      for(const [u,op] of Object.entries(otherPlayers)){
+        const dx=op.mesh.position.x-p.mesh.position.x, dz=op.mesh.position.z-p.mesh.position.z;
+        if(Math.sqrt(dx*dx+dz*dz)<1.0){
+          sendHit(u,p.dmg,p.weapon); flashMesh(op.mesh,0xffff00); p.hit=true;
+          // Arrow sticks in player
+          const stuckPos=p.mesh.position.clone().sub(op.mesh.position);
+          op.mesh.add(p.mesh); p.mesh.position.copy(stuckPos);
+          projectiles.splice(i,1);
+          setTimeout(()=>{if(p.mesh.parent) p.mesh.parent.remove(p.mesh);},60000);
+          break;
         }
-        // Expire after 5 seconds if no hit
-        if(!p.hit && Date.now()-p.born>5000){ scene.remove(p.mesh); projectiles.splice(i,1); }
+      }
     }
+    if(!p.hit&&Date.now()-p.born>6000){scene.remove(p.mesh);projectiles.splice(i,1);}
+  }
 
-    // Traps
-    checkTraps();
+  checkTraps();
 
-    // Item bob + spin
-    const t=Date.now()*0.001;
-    Object.values(worldItemMeshes).forEach(m=>{
-        m.position.y=0.35+Math.sin(t*2+m.position.x)*0.13;
-        m.rotation.y+=dt*1.4;
-    });
+  // Bob + spin world items
+  const t=Date.now()*.001;
+  Object.values(worldItemMeshes).forEach(m=>{m.position.y=.4+Math.sin(t*2+m.position.x)*.12;m.rotation.y+=dt*1.2;});
 
-    // Flail wobble visual (show chain + ball swinging)
-    flailAngle+=dt*3;
+  // Flail idle sway even without mouse movement
+  if(inventory[selectedSlot]?.defKey==='flail'){
+    flailVel*=.92;
+    flailAngle+=flailVel;
+    if(handItemMesh){handItemMesh.rotation.z=Math.sin(t*2)*.15+flailAngle*.4;}
+  }
 
-    // Pickup prompt
-    const near=getNearItem();
-    const pp=document.getElementById('pickup-prompt');
-    pp.style.display=near?'block':'none';
-    if(near){ const def=ITEM_DEFS[near.defKey]; pp.innerText=`[ E ] pick up ${def.emoji} ${near.defKey}`; }
+  // Pickup prompt
+  const near=getNearItem();
+  const pp=document.getElementById('pickup-prompt');
+  pp.style.display=near?'block':'none';
+  if(near){const def=DEFS[near.defKey];pp.innerText=`[ E ] ${def.emoji} ${near.defKey} — ${def.desc}`;}
 
-    // 3rd person: position self mesh
-    if(thirdPerson && selfMesh){
-        selfMesh.position.set(camera.position.x, 0, camera.position.z);
-        selfMesh.rotation.y=yaw;
+  // 3rd person self mesh
+  if(thirdPerson&&selfMesh){selfMesh.position.set(camera.position.x,0,camera.position.z);selfMesh.rotation.y=yaw;}
+
+  updateOverheads();
+  renderer.render(scene,camera);
+}
+
+function movePlayer(dt){
+  const dir=new THREE.Vector3();
+  if(keys['w']||keys['arrowup'])    dir.z-=1;
+  if(keys['s']||keys['arrowdown'])  dir.z+=1;
+  if(keys['a']||keys['arrowleft'])  dir.x-=1;
+  if(keys['d']||keys['arrowright']) dir.x+=1;
+  if(dir.lengthSq()>0){
+    dir.normalize().applyEuler(new THREE.Euler(0,yaw,0));
+    const spd=PLAYER_SPEED*speedMult;
+    camera.position.x=Math.max(-48,Math.min(48,camera.position.x+dir.x*spd*dt));
+    camera.position.z=Math.max(-48,Math.min(48,camera.position.z+dir.z*spd*dt));
+  }
+  camera.position.y=thirdPerson?PLAYER_HEIGHT+2.5:PLAYER_HEIGHT;
+  camera.rotation.y=yaw; camera.rotation.x=thirdPerson?-.3:pitch;
+}
+
+function getNearItem(){
+  const px=camera.position.x,pz=camera.position.z;
+  for(const[id,mesh] of Object.entries(worldItemMeshes)){
+    if(pickedUpItems[id]) continue;
+    const dx=mesh.position.x-px,dz=mesh.position.z-pz;
+    if(Math.sqrt(dx*dx+dz*dz)<PICKUP_DIST) return{id,defKey:mesh.userData.defKey};
+  }
+  return null;
+}
+
+function updateOverheads(){
+  Object.entries(otherPlayers).forEach(([u,op])=>{
+    _v3.set(op.mesh.position.x,op.mesh.position.y+2.1,op.mesh.position.z);
+    const sc=toScreen(_v3);
+    if(!op.nameEl){const el=document.createElement('div');el.className='oh-name';el.innerText=u;document.body.appendChild(el);op.nameEl=el;}
+    if(sc){
+      op.nameEl.style.display='block';op.nameEl.style.left=sc.x+'px';op.nameEl.style.top=sc.y+'px';
+      op.hpEl.style.display='block';op.hpEl.style.left=sc.x+'px';op.hpEl.style.top=(sc.y+18)+'px';
+      const p=(op.hp||MAX_HP)/MAX_HP*100;
+      op.hpFill.style.width=p+'%';op.hpFill.style.background=p>60?'#2ed573':p>30?'#f39c12':'#eb4d4b';
+    } else {op.nameEl.style.display='none';op.hpEl.style.display='none';}
+    if(bubbles[u]){
+      _v3.set(op.mesh.position.x,op.mesh.position.y+3.0,op.mesh.position.z);
+      const bs=toScreen(_v3);
+      if(bs){bubbles[u].el.style.display='block';bubbles[u].el.style.left=bs.x+'px';bubbles[u].el.style.top=bs.y+'px';}
+      else bubbles[u].el.style.display='none';
     }
-
-    updateOverheads();
-    renderer.render(scene,camera);
+  });
 }
 
-function checkTraps() {
-    // Check floor items that are traps and haven't been placed
-    const px=camera.position.x, pz=camera.position.z;
-    // Placed trap check (from Firebase would be ideal but for now local)
-    Object.entries(worldItemMeshes).forEach(([id,mesh])=>{
-        const def=ITEM_DEFS[mesh.userData.defKey];
-        if(!def) return;
-        if(def.special!=='trap'&&def.special!=='web') return;
-        const owner=mesh.userData.placedBy;
-        if(owner===currentUser) return; // don't trap yourself
-        const dx=mesh.position.x-px, dz=mesh.position.z-pz;
-        if(Math.sqrt(dx*dx+dz*dz)<(def.trapRadius||1.5)){
-            if(!mesh.userData.triggered){
-                mesh.userData.triggered=true;
-                if(def.special==='trap'){
-                    dealDamageToSelf(def.value,'Bear Trap','bear_trap',owner||'trap');
-                    addStatus('🐢 Slowed',def.trapTime);
-                    speedMult=Math.min(speedMult,def.trapSlow);
-                    setTimeout(()=>{ speedMult=1; applyPassiveEffects(); removeStatus('🐢 Slowed'); },def.trapTime);
-                    removeWorldItem(id); delete pickedUpItems[id];
-                    showNotif('🪤 Bear Trap! Slowed + damaged!');
-                } else { // web
-                    addStatus('🕸️ Webbed',3000);
-                    speedMult=Math.min(speedMult,def.trapSlow);
-                    setTimeout(()=>{ speedMult=1; applyPassiveEffects(); removeStatus('🕸️ Webbed'); mesh.userData.triggered=false; },3000);
-                    showNotif('🕸️ Caught in a web!');
-                }
-            }
-        }
-    });
+function toScreen(pos){
+  const v=pos.clone().project(camera);
+  if(v.z>1) return null;
+  return{x:(v.x*.5+.5)*window.innerWidth,y:(-v.y*.5+.5)*window.innerHeight};
 }
 
-function movePlayer(dt) {
-    const dir=new THREE.Vector3();
-    if(keys['w']||keys['arrowup'])    dir.z-=1;
-    if(keys['s']||keys['arrowdown'])  dir.z+=1;
-    if(keys['a']||keys['arrowleft'])  dir.x-=1;
-    if(keys['d']||keys['arrowright']) dir.x+=1;
-    if(dir.lengthSq()>0){
-        dir.normalize().applyEuler(new THREE.Euler(0,yaw,0));
-        const spd=PLAYER_SPEED*speedMult;
-        camera.position.x=Math.max(-48,Math.min(48,camera.position.x+dir.x*spd*dt));
-        camera.position.z=Math.max(-48,Math.min(48,camera.position.z+dir.z*spd*dt));
-    }
-    camera.position.y=thirdPerson?PLAYER_HEIGHT+2.5:PLAYER_HEIGHT;
-    camera.rotation.y=yaw; camera.rotation.x=thirdPerson?-0.3:pitch;
-}
-
-function getNearItem() {
-    const px=camera.position.x, pz=camera.position.z;
-    for(const [id,mesh] of Object.entries(worldItemMeshes)){
-        if(pickedUpItems[id]) continue;
-        const dx=mesh.position.x-px, dz=mesh.position.z-pz;
-        if(Math.sqrt(dx*dx+dz*dz)<PICKUP_DIST) return {id, defKey:mesh.userData.defKey};
-    }
-    return null;
-}
-
-function updateOverheads() {
-    Object.entries(otherPlayers).forEach(([u,op])=>{
-        _v3.set(op.mesh.position.x,op.mesh.position.y+2.1,op.mesh.position.z);
-        const sc=toScreen(_v3);
-        if(!op.nameEl){
-            const el=document.createElement('div'); el.className='overhead-name'; el.innerText=u;
-            document.body.appendChild(el); op.nameEl=el;
-        }
-        if(sc){
-            op.nameEl.style.display='block'; op.nameEl.style.left=sc.x+'px'; op.nameEl.style.top=sc.y+'px';
-            op.hpEl.style.display='block'; op.hpEl.style.left=sc.x+'px'; op.hpEl.style.top=(sc.y+18)+'px';
-            const pct=(op.hp||MAX_HP)/MAX_HP*100;
-            op.hpFill.style.width=pct+'%';
-            op.hpFill.style.background=pct>60?'#2ed573':pct>30?'#f39c12':'#eb4d4b';
-        } else {
-            op.nameEl.style.display='none'; op.hpEl.style.display='none';
-        }
-        if(bubbles[u]){
-            _v3.set(op.mesh.position.x,op.mesh.position.y+2.9,op.mesh.position.z);
-            const bs=toScreen(_v3);
-            if(bs){ bubbles[u].el.style.display='block'; bubbles[u].el.style.left=bs.x+'px'; bubbles[u].el.style.top=bs.y+'px'; }
-            else bubbles[u].el.style.display='none';
-        }
-    });
-}
-
-function toScreen(pos) {
-    const v=pos.clone().project(camera);
-    if(v.z>1) return null;
-    return { x:(v.x*0.5+0.5)*window.innerWidth, y:(-v.y*0.5+0.5)*window.innerHeight };
-}
-
-// ═══════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 //  UTILS
-// ═══════════════════════════════════════════
-function showNotif(msg) {
-    const el=document.getElementById('notif');
-    el.innerText=msg; el.style.display='block';
-    clearTimeout(el._t); el._t=setTimeout(()=>el.style.display='none',2500);
-}
-function sysChat(msg) {
-    db.ref("claregame_chat").push({username:'SYSTEM',text:msg,time:Date.now()});
-}
-function hashCode(s) {
-    let h=0; for(let i=0;i<s.length;i++) h=s.charCodeAt(i)+((h<<5)-h); return h;
-}
-window.addEventListener('beforeunload',()=>{
-    if(currentUser){ db.ref("claregame_players/"+currentUser).remove(); db.ref("claregame_hp/"+currentUser).remove(); }
-});
+// ══════════════════════════════════════════════════════
+function showNotif(msg){const el=document.getElementById('notif');el.innerText=msg;el.style.display='block';clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',2500);}
+function sysChat(msg){db.ref("claregame_chat").push({username:'SYSTEM',text:msg,time:Date.now()});}
+function hashCode(s){let h=0;for(let i=0;i<s.length;i++)h=s.charCodeAt(i)+((h<<5)-h);return h;}
+window.addEventListener('beforeunload',()=>{if(currentUser){db.ref("claregame_players/"+currentUser).remove();db.ref("claregame_hp/"+currentUser).remove();}});
 </script>
 </body>
 </html>
