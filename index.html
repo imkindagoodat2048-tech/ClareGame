@@ -144,6 +144,7 @@
             position: absolute; bottom: 12px; left: 14px;
             font-size: 10px; color: rgba(162,155,254,0.5); line-height: 1.9;
         }
+        .inv-slot { cursor: pointer; }
         #notif {
             position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
             background: rgba(26,26,45,0.92); border: 1px solid var(--primary);
@@ -277,14 +278,16 @@
                 WASD · move<br>
                 MOUSE · look<br>
                 E · pick up<br>
+                Q · drop selected<br>
+                1-5 · select slot<br>
                 / · chat
             </div>
             <div id="inventory">
-                <div class="inv-slot active" id="slot-0"></div>
-                <div class="inv-slot" id="slot-1"></div>
-                <div class="inv-slot" id="slot-2"></div>
-                <div class="inv-slot" id="slot-3"></div>
-                <div class="inv-slot" id="slot-4"></div>
+                <div class="inv-slot active" id="slot-0" onclick="selectSlot(0)"></div>
+                <div class="inv-slot" id="slot-1" onclick="selectSlot(1)"></div>
+                <div class="inv-slot" id="slot-2" onclick="selectSlot(2)"></div>
+                <div class="inv-slot" id="slot-3" onclick="selectSlot(3)"></div>
+                <div class="inv-slot" id="slot-4" onclick="selectSlot(4)"></div>
             </div>
         </div>
 
@@ -406,6 +409,8 @@ function openControls() {
             <b style="color:white;">WASD</b> — Move<br>
             <b style="color:white;">Mouse</b> — Look around (click screen to lock)<br>
             <b style="color:white;">E</b> — Pick up nearby item<br>
+            <b style="color:white;">Q</b> — Drop selected item<br>
+            <b style="color:white;">1-5</b> — Select inventory slot<br>
             <b style="color:white;">/</b> — Open chat<br>
             <b style="color:white;">Enter</b> — Send chat<br>
             <b style="color:white;">Esc</b> — Close chat / unlock mouse
@@ -437,6 +442,7 @@ let worldItemMeshes = {}; // id → mesh
 let pickedUpItems = {};
 let inventory     = [null,null,null,null,null];
 let chatting      = false;
+let selectedSlot  = 0;
 let yaw = 0, pitch = 0;
 const keys = {};
 
@@ -598,7 +604,11 @@ function setupInput() {
         keys[e.key.toLowerCase()] = true;
         if (e.key === '/') { e.preventDefault(); openChat(); }
         if (e.key.toLowerCase() === 'e') tryPickup();
+        if (e.key.toLowerCase() === 'q') tryDrop();
         if (e.key === 'Escape') document.exitPointerLock();
+        // 1-5 selects inventory slot
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 5) selectSlot(num - 1);
     });
     document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
@@ -665,6 +675,49 @@ function tryPickup() {
     }
 }
 
+function selectSlot(i) {
+    selectedSlot = i;
+    for (let s = 0; s < 5; s++) {
+        document.getElementById('slot-' + s).classList.toggle('active', s === i);
+    }
+}
+
+function tryDrop() {
+    const item = inventory[selectedSlot];
+    if (!item) { showNotif("Nothing to drop!"); return; }
+
+    // Place it back in the world near the player
+    const dropX = +(camera.position.x + Math.sin(yaw) * 1.5).toFixed(2);
+    const dropZ = +(camera.position.z + Math.cos(yaw) * 1.5).toFixed(2);
+
+    // Restore item in Firebase so everyone sees it
+    db.ref("claregame_items/" + item.id).remove();
+
+    // Re-spawn the mesh locally
+    const geo  = new THREE.BoxGeometry(0.5,0.5,0.5);
+    const mat  = new THREE.MeshLambertMaterial({ color: 0xffd700, emissive: 0xff8800, emissiveIntensity: 0.4 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(dropX, 0.4, dropZ);
+    mesh.userData = { ...item, x: dropX, z: dropZ };
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffff00 })));
+    scene.add(mesh);
+    worldItemMeshes[item.id] = mesh;
+
+    // Update the WORLD_ITEMS position so pickup detection works from new spot
+    const wi = WORLD_ITEMS.find(w => w.id === item.id);
+    if (wi) { wi.x = dropX; wi.z = dropZ; }
+
+    // Remove from inventory
+    inventory[selectedSlot] = null;
+    delete pickedUpItems[item.id];
+    updateInventoryUI();
+    showNotif(`Dropped ${item.emoji} ${item.name}`);
+
+    db.ref("claregame_chat").push({
+        username: "SYSTEM", text: `${currentUser} dropped ${item.emoji} ${item.name}`, time: Date.now()
+    });
+}
+
 function removeWorldItem(id) {
     if (worldItemMeshes[id]) { scene.remove(worldItemMeshes[id]); delete worldItemMeshes[id]; }
 }
@@ -674,6 +727,7 @@ function updateInventoryUI() {
         const s = document.getElementById('slot-' + i);
         s.innerText = inventory[i] ? inventory[i].emoji : '';
         s.title     = inventory[i] ? inventory[i].name  : '';
+        s.classList.toggle('active', i === selectedSlot);
     }
 }
 
@@ -689,8 +743,8 @@ function initFirebase() {
             const d = c.val();
             const div = document.createElement('div');
             div.className = 'chat-line';
-            const isSys = d.username === 'SYSTEM';
-            div.innerHTML = `<span class="cname ${isSys ? 'sys' : ''}">${d.username}</span>${d.text}`;
+            const isSystem = d.username === 'SYSTEM';
+            div.innerHTML = `<span class="cname ${isSystem ? 'sys' : ''}">${d.username}</span>${d.text}`;
             panel.appendChild(div);
         });
         panel.scrollTop = panel.scrollHeight;
