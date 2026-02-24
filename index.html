@@ -261,6 +261,8 @@
             <span id="username-tag"></span>
             <button class="icon-btn" onclick="openControls()">❓</button>
             <button class="icon-btn" onclick="openMembers()">👥</button>
+            <button id="pvp-btn" class="icon-btn" onclick="togglePVP()" style="background:#2f3542;">⚔️ PVP: OFF</button>
+            <button id="reset-btn" class="icon-btn hidden" onclick="resetAllItems()" style="background:#eb4d4b;">🔄 Reset Items</button>
         </div>
         <button class="exit-btn" onclick="location.reload()">Exit</button>
     </div>
@@ -279,8 +281,15 @@
                 MOUSE · look<br>
                 E · pick up<br>
                 Q · drop selected<br>
+                F · attack (PVP)<br>
                 1-5 · select slot<br>
                 / · chat
+            </div>
+            <div id="health-bar" style="position:absolute;top:12px;right:14px;background:rgba(26,26,45,0.85);border:1px solid var(--primary);border-radius:6px;padding:6px 12px;font-size:12px;color:white;display:none;">
+                ❤️ <span id="hp-val">100</span> / 100
+            </div>
+            <div id="pvp-indicator" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(235,77,75,0.15);border:1px solid #eb4d4b;border-radius:6px;padding:4px 14px;font-size:11px;color:#eb4d4b;display:none;">
+                ⚔️ PVP MODE ON — hold F to attack nearby players
             </div>
             <div id="inventory">
                 <div class="inv-slot active" id="slot-0" onclick="selectSlot(0)"></div>
@@ -388,8 +397,14 @@ function launch(u) {
         }
     });
 
+    // Show reset button only for bartelsfamily5
+    if (u === 'bartelsfamily5') {
+        document.getElementById('reset-btn').classList.remove('hidden');
+    }
+
     initGame();
     initFirebase();
+    initPVP();
 }
 
 // ─────────────────────────────────────────────
@@ -450,16 +465,30 @@ const PLAYER_SPEED = 6;
 const PLAYER_HEIGHT = 1.0;
 const PICKUP_DIST   = 3.2;
 
+// damage dealt per hit for each weapon
+const WEAPON_DAMAGE = {
+    'Sword': 35, 'Axe': 40, 'Bow': 25, 'Dagger': 20,
+    'Spear': 30, 'Mace': 38, 'Crossbow': 28, 'Katana': 45
+};
+
 const WORLD_ITEMS = [
-    { id:'i1', emoji:'🍎', name:'Apple',       x:  8, z:  5 },
-    { id:'i2', emoji:'⚔️',  name:'Sword',       x: -6, z:  3 },
-    { id:'i3', emoji:'💎', name:'Diamond',     x: 12, z:-10 },
-    { id:'i4', emoji:'🗝️',  name:'Key',         x: -3, z: 12 },
-    { id:'i5', emoji:'📦', name:'Mystery Box',  x:  0, z: -8 },
-    { id:'i6', emoji:'🍄', name:'Mushroom',    x: 15, z:  2 },
-    { id:'i7', emoji:'🪙', name:'Coin',        x:-12, z: -6 },
-    { id:'i8', emoji:'🎈', name:'Balloon',     x:  4, z: 15 },
+    { id:'i1', emoji:'⚔️',  name:'Sword',    x:  8, z:  5 },
+    { id:'i2', emoji:'🪓', name:'Axe',      x: -6, z:  3 },
+    { id:'i3', emoji:'🏹', name:'Bow',      x: 12, z:-10 },
+    { id:'i4', emoji:'🗡️',  name:'Dagger',   x: -3, z: 12 },
+    { id:'i5', emoji:'🔱', name:'Spear',    x:  0, z: -8 },
+    { id:'i6', emoji:'🔨', name:'Mace',     x: 15, z:  2 },
+    { id:'i7', emoji:'🎯', name:'Crossbow', x:-12, z: -6 },
+    { id:'i8', emoji:'🌀', name:'Katana',   x:  4, z: 15 },
 ];
+
+// PVP + health state
+let pvpMode    = false;
+let myHP       = 100;
+const MAX_HP   = 100;
+const ATTACK_DIST    = 4.0;
+const ATTACK_COOLDOWN = 800; // ms
+let lastAttackTime   = 0;
 
 const bubbles = {}; // username → { el, timer }
 
@@ -605,6 +634,7 @@ function setupInput() {
         if (e.key === '/') { e.preventDefault(); openChat(); }
         if (e.key.toLowerCase() === 'e') tryPickup();
         if (e.key.toLowerCase() === 'q') tryDrop();
+        if (e.key.toLowerCase() === 'f') tryAttack();
         if (e.key === 'Escape') document.exitPointerLock();
         // 1-5 selects inventory slot
         const num = parseInt(e.key);
@@ -940,6 +970,192 @@ function hashCode(s) {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
     return h;
+}
+
+
+// ─────────────────────────────────────────────
+//  PVP & COMBAT
+// ─────────────────────────────────────────────
+function initPVP() {
+    // Show health bar
+    document.getElementById('health-bar').style.display = 'block';
+
+    // Listen for incoming hits on this player
+    db.ref('claregame_hits/' + currentUser).on('value', snap => {
+        if (!snap.exists()) return;
+        const hit = snap.val();
+        // Only process hits newer than 3 seconds
+        if (Date.now() - hit.time > 3000) return;
+        if (!pvpMode) return;
+
+        myHP = Math.max(0, myHP - hit.dmg);
+        updateHealthUI();
+        showNotif(`💥 Hit by ${hit.from} with ${hit.weapon} (-${hit.dmg}hp)`);
+
+        // Flash red
+        const flash = document.createElement('div');
+        flash.style.cssText = 'position:fixed;inset:0;background:rgba(235,77,75,0.35);pointer-events:none;z-index:9000;';
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 200);
+
+        // Clear the hit so it doesn't re-trigger
+        db.ref('claregame_hits/' + currentUser).remove();
+
+        if (myHP <= 0) handleDeath(hit.from);
+    });
+
+    // Listen for PVP mode toggle from Firebase
+    db.ref('claregame_pvp').on('value', snap => {
+        const val = snap.val();
+        pvpMode = val === true;
+        updatePVPUI();
+    });
+}
+
+function togglePVP() {
+    // Anyone can vote but the state is global — stored in Firebase
+    const newVal = !pvpMode;
+    db.ref('claregame_pvp').set(newVal);
+}
+
+function updatePVPUI() {
+    const btn = document.getElementById('pvp-btn');
+    const ind = document.getElementById('pvp-indicator');
+    if (pvpMode) {
+        btn.style.background = '#eb4d4b';
+        btn.innerText = '⚔️ PVP: ON';
+        ind.style.display = 'block';
+    } else {
+        btn.style.background = '#2f3542';
+        btn.innerText = '⚔️ PVP: OFF';
+        ind.style.display = 'none';
+    }
+}
+
+function updateHealthUI() {
+    document.getElementById('hp-val').innerText = myHP;
+    const bar = document.getElementById('health-bar');
+    if (myHP <= 30) bar.style.borderColor = '#eb4d4b';
+    else if (myHP <= 60) bar.style.borderColor = '#f39c12';
+    else bar.style.borderColor = 'var(--primary)';
+}
+
+function tryAttack() {
+    if (!pvpMode) { showNotif('PVP is OFF'); return; }
+
+    const now = Date.now();
+    if (now - lastAttackTime < ATTACK_COOLDOWN) {
+        const left = ((ATTACK_COOLDOWN - (now - lastAttackTime)) / 1000).toFixed(1);
+        showNotif(`⏱ Cooldown: ${left}s`);
+        return;
+    }
+
+    // Check equipped weapon
+    const weapon = inventory[selectedSlot];
+    if (!weapon) { showNotif('Equip a weapon first!'); return; }
+
+    const dmg = WEAPON_DAMAGE[weapon.name] || 20;
+    const px = camera.position.x, pz = camera.position.z;
+    let hit = false;
+
+    Object.entries(otherPlayers).forEach(([u, op]) => {
+        const dx = op.mesh.position.x - px;
+        const dz = op.mesh.position.z - pz;
+        if (Math.sqrt(dx*dx + dz*dz) < ATTACK_DIST) {
+            // Send hit to Firebase
+            db.ref('claregame_hits/' + u).set({
+                from: currentUser,
+                weapon: weapon.name,
+                dmg,
+                time: Date.now()
+            });
+            showNotif(`⚔️ Hit ${u} with ${weapon.emoji} ${weapon.name}! (-${dmg}hp)`);
+            hit = true;
+
+            // Swing flash — yellow flash on their mesh
+            const origColor = op.mesh.children[0]?.material?.color?.getHex();
+            op.mesh.children.forEach(c => { if (c.material && c.material.color) c.material.color.set(0xffff00); });
+            setTimeout(() => {
+                op.mesh.children.forEach(c => { if (c.material && c.material.color && origColor) c.material.color.set(origColor); });
+            }, 150);
+        }
+    });
+
+    if (!hit) showNotif('No one in range!');
+    lastAttackTime = now;
+}
+
+function handleDeath(killedBy) {
+    myHP = MAX_HP;
+    updateHealthUI();
+
+    // Respawn at random spot
+    camera.position.set(
+        (Math.random() - 0.5) * 20,
+        PLAYER_HEIGHT,
+        (Math.random() - 0.5) * 20
+    );
+
+    // Drop all inventory on death
+    inventory.forEach((item, i) => {
+        if (item) {
+            inventory[i] = null;
+            const dropX = +(camera.position.x + (Math.random()-0.5)*4).toFixed(2);
+            const dropZ = +(camera.position.z + (Math.random()-0.5)*4).toFixed(2);
+            db.ref('claregame_items/' + item.id).remove();
+            const geo  = new THREE.BoxGeometry(0.5,0.5,0.5);
+            const mat  = new THREE.MeshLambertMaterial({ color:0xffd700, emissive:0xff8800, emissiveIntensity:0.4 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(dropX, 0.4, dropZ);
+            mesh.userData = { ...item, x:dropX, z:dropZ };
+            mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color:0xffff00 })));
+            scene.add(mesh);
+            worldItemMeshes[item.id] = mesh;
+            const wi = WORLD_ITEMS.find(w => w.id === item.id);
+            if (wi) { wi.x = dropX; wi.z = dropZ; }
+            delete pickedUpItems[item.id];
+        }
+    });
+    updateInventoryUI();
+
+    db.ref('claregame_chat').push({ username:'SYSTEM', text:`💀 ${currentUser} was slain by ${killedBy}!`, time:Date.now() });
+    showNotif(`💀 You were killed by ${killedBy}! Respawned.`);
+}
+
+// ─────────────────────────────────────────────
+//  RESET ITEMS (bartelsfamily5 only)
+// ─────────────────────────────────────────────
+function resetAllItems() {
+    if (currentUser !== 'bartelsfamily5') return;
+    if (!confirm('Reset ALL items back to spawn positions?')) return;
+
+    // Clear picked-up state in Firebase
+    db.ref('claregame_items').remove();
+
+    // Reset positions back to original
+    const ORIGINAL = [
+        { id:'i1', x:  8, z:  5 }, { id:'i2', x: -6, z:  3 },
+        { id:'i3', x: 12, z:-10 }, { id:'i4', x: -3, z: 12 },
+        { id:'i5', x:  0, z: -8 }, { id:'i6', x: 15, z:  2 },
+        { id:'i7', x:-12, z: -6 }, { id:'i8', x:  4, z: 15 },
+    ];
+    ORIGINAL.forEach(o => {
+        const wi = WORLD_ITEMS.find(w => w.id === o.id);
+        if (wi) { wi.x = o.x; wi.z = o.z; }
+    });
+
+    // Remove all local meshes
+    Object.values(worldItemMeshes).forEach(m => scene.remove(m));
+    worldItemMeshes = {};
+    pickedUpItems   = {};
+    inventory       = [null,null,null,null,null];
+    updateInventoryUI();
+
+    // Re-spawn all meshes
+    spawnWorldItems();
+
+    db.ref('claregame_chat').push({ username:'SYSTEM', text:'🔄 bartelsfamily5 reset all items!', time:Date.now() });
+    showNotif('All items reset!');
 }
 
 window.addEventListener('beforeunload', () => {
