@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClareGame 0.8</title>
+<title>ClareGame 0.8 - InterScepter</title>
 <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -606,12 +606,99 @@ function openControls(){
   </div>`);
 }
 function openMembers(){
-  db.ref("claregame_players").once("value",snap=>{
-    let html=`<h3>👥 Online</h3>`;
-    if(!snap.exists()) html+=`<p style="color:#666;font-size:12px;">Nobody else online.</p>`;
-    snap.forEach(c=>{html+=`<div style="text-align:left;padding:6px 0;border-bottom:1px solid #333;font-size:12px;"><b style="color:#a29bfe;">${c.key}</b>${admins.includes(c.key)?'<span style="color:var(--primary);font-size:9px;margin-left:4px;">[ADM]</span>':''}</div>`;});
-    showModal(html);
+  // Pull ALL registered users (not just online) so admins can manage anyone
+  db.ref("users").once("value",snap=>{
+    // Also get who's currently in-game
+    db.ref("claregame_players").once("value",onlineSnap=>{
+      const online={};
+      onlineSnap.forEach(c=>online[c.key]=true);
+
+      let html=`<h3>👥 Players</h3>`;
+      snap.forEach(u=>{
+        const d=u.val();
+        const isBanned=d.banned===true;
+        const isOnline=online[u.key]===true;
+        const pfp=d.pfp||'https://via.placeholder.com/30';
+        const status=d.status||'Active';
+        html+=`
+        <div style="text-align:left;border-bottom:1px solid #333;padding:10px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;cursor:pointer;gap:8px;" onclick="viewProfile('${u.key}')">
+            <img src="${pfp}" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--primary);object-fit:cover;flex-shrink:0;">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#a29bfe;">
+                ${u.key}
+                ${admins.includes(u.key)?'<span style="color:var(--primary);font-size:9px;margin-left:3px;">[ADM]</span>':''}
+                ${isBanned?'<span style="color:#eb4d4b;font-size:9px;margin-left:3px;">(banned)</span>':''}
+                ${isOnline?'<span style="color:#2ed573;font-size:9px;margin-left:3px;">● in-game</span>':''}
+              </div>
+              <div style="font-size:10px;color:#666;">"${status}"</div>
+            </div>
+          </div>
+          ${admins.includes(currentUser)&&u.key!==currentUser?`
+          <div style="display:flex;gap:3px;flex-shrink:0;">
+            <button onclick="event.stopPropagation();warnPlayer('${u.key}')" style="background:orange;color:white;font-size:9px;border:none;border-radius:4px;padding:4px 6px;cursor:pointer;" title="Warn">W</button>
+            ${isBanned
+              ?`<button onclick="event.stopPropagation();unbanPlayer('${u.key}')" style="background:#2ed573;color:black;font-size:9px;border:none;border-radius:4px;padding:4px 6px;cursor:pointer;" title="Unban">U</button>`
+              :`<button onclick="event.stopPropagation();banPlayer('${u.key}')" style="background:#eb4d4b;color:white;font-size:9px;border:none;border-radius:4px;padding:4px 6px;cursor:pointer;" title="Ban">B</button>`
+            }
+            <button onclick="event.stopPropagation();delPlayer('${u.key}')" style="background:#111;color:white;font-size:9px;border:none;border-radius:4px;padding:4px 6px;cursor:pointer;" title="Delete Account">D</button>
+            ${isOnline?`<button onclick="event.stopPropagation();kickPlayer('${u.key}')" style="background:#6c3483;color:white;font-size:9px;border:none;border-radius:4px;padding:4px 6px;cursor:pointer;" title="Kick from game">K</button>`:''}
+          </div>`:''}
+        </div>`;
+      });
+      showModal(html);
+    });
   });
+}
+
+async function viewProfile(u){
+  const s=await db.ref("users/"+u).once("value");
+  const d=s.val()||{};
+  showModal(`
+    <img src="${d.pfp||'https://via.placeholder.com/80'}" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--primary);object-fit:cover;margin-bottom:10px;">
+    <h3 style="margin:0 0 4px 0;">${u}</h3>
+    <p style="color:#aaa;font-size:12px;margin:0;">"${d.status||'Active'}"</p>
+    ${admins.includes(u)?'<p style="color:var(--primary);font-size:10px;margin-top:6px;">[Administrator]</p>':''}
+  `);
+}
+
+function warnPlayer(u){
+  db.ref("users/"+u).update({warned:true});
+  alert("⚠️ Warning sent to "+u);
+  openMembers();
+}
+
+function banPlayer(u){
+  if(!confirm("Ban "+u+" from ClareGame?")){return;}
+  db.ref("users/"+u).update({banned:true}).then(()=>{
+    // Also kick them from the active game session
+    db.ref("claregame_kick/"+u).set({by:currentUser,time:Date.now()});
+    alert(u+" has been banned.");
+    openMembers();
+  });
+}
+
+function unbanPlayer(u){
+  db.ref("users/"+u).update({banned:false}).then(()=>{
+    alert(u+" has been unbanned.");
+    openMembers();
+  });
+}
+
+function delPlayer(u){
+  if(!confirm("Permanently delete "+u+"'s account? This cannot be undone.")){return;}
+  db.ref("users/"+u).remove().then(()=>{
+    db.ref("claregame_kick/"+u).set({by:currentUser,time:Date.now()});
+    alert(u+"'s account has been deleted.");
+    openMembers();
+  });
+}
+
+function kickPlayer(u){
+  if(!confirm("Kick "+u+" from the current game session?")){return;}
+  db.ref("claregame_kick/"+u).set({by:currentUser,time:Date.now()});
+  alert(u+" has been kicked.");
+  openMembers();
 }
 
 // ══════════════════════════════════════════════════════
@@ -1033,6 +1120,15 @@ function initPVP(){
     applyBleed(b.dps,b.secs,b.from); db.ref("claregame_bleed/"+currentUser).remove();
   });
   db.ref("claregame_pvp").on("value",snap=>{pvpMode=snap.val()===true;updatePVPUI();});
+  // Kick/ban listener — admin kicks/bans us from game
+  db.ref("claregame_kick/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const d=snap.val(); if(Date.now()-d.time>10000) return;
+    db.ref("claregame_kick/"+currentUser).remove();
+    db.ref("claregame_players/"+currentUser).remove();
+    alert("⛔ You have been removed from the game by "+d.by+".");
+    location.reload();
+  });
   db.ref("claregame_push/"+currentUser).on("value",snap=>{
     if(!snap.exists()) return;
     const p=snap.val(); if(Date.now()-p.time>3000) return;
