@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClareGame 0.6</title>
+<title>ClareGame 0.8</title>
 <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -68,6 +68,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:#fff;overflow:hid
 .modal-box h3{margin-bottom:12px;color:var(--primary);}
 @keyframes glow{0%,100%{filter:drop-shadow(0 0 6px gold)}50%{filter:drop-shadow(0 0 16px gold)}}
 .golden-slot{animation:glow 1s infinite;}
+@keyframes flicker{0%,100%{opacity:.3}50%{opacity:.7}}
+#fire-overlay{position:fixed;inset:0;border:8px solid rgba(255,80,0,0);pointer-events:none;z-index:500;animation:flicker .25s infinite;}
+#shield-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:110px;height:110px;border:3px solid rgba(255,215,0,.7);border-radius:50%;pointer-events:none;display:none;box-shadow:0 0 24px rgba(255,215,0,.5),inset 0 0 16px rgba(255,215,0,.15);}
 </style>
 </head>
 <body>
@@ -79,7 +82,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:#fff;overflow:hid
 
 <div id="auth-container">
   <div class="auth-box">
-    <h2 id="auth-header">ClareGame 0.6</h2>
+    <h2 id="auth-header">ClareGame</h2>
     <input type="text" id="username-in" placeholder="Username">
     <input type="password" id="password-in" placeholder="Password">
     <button onclick="handleLogin()">Login</button>
@@ -105,7 +108,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:#fff;overflow:hid
       <div id="crosshair"></div>
       <div id="pickup-prompt"></div>
       <div id="notif"></div>
-      <div id="pvp-indicator">⚔️ PVP ON — F to attack · Flail: flick mouse</div>
+      <div id="pvp-indicator">⚔️ PVP ON — F to attack</div>
+      <div id="shield-ring"></div>
       <div id="health-bar">❤️ <span id="hp-val">100</span>/100<div id="hp-fill-wrap"><div id="hp-fill"></div></div></div>
       <div id="status-effects"></div>
       <div id="controls-hint">
@@ -169,33 +173,44 @@ function showBanScreen(){document.getElementById('auth-container').classList.add
 // type: weapon | consumable | trap | passive
 // special: slash|poke|bleed|flail|projectile|heal|speed_burst|poison|golden|speed|trap|web
 const DEFS={
-  sword:      {type:'weapon',    emoji:'⚔️', damage:30,cooldown:2000,range:3.5,special:'slash',  desc:'30dmg slash, 2s CD'},
-  dagger:     {type:'weapon',    emoji:'🗡️', damage:15,cooldown:1000,range:2.5,special:'poke',   desc:'15dmg poke, 1s CD'},
-  katana:     {type:'weapon',    emoji:'🌀', damage:20,cooldown:1500,range:3.5,special:'slash',  speedBonus:1.4, desc:'Faster movement, 20dmg'},
-  spear:      {type:'weapon',    emoji:'🔱', damage:10,cooldown:2000,range:6.0,special:'bleed',  desc:'10+10 bleed over 5s, long range'},
-  flail:      {type:'weapon',    emoji:'⚙️', damage:40,cooldown:0,   range:4.5,special:'flail',  desc:'Swing by flicking mouse'},
-  bow:        {type:'weapon',    emoji:'🏹', damage:20,cooldown:3000,range:999, special:'projectile',projSpeed:10, desc:'Slow projectile, 3s CD'},
-  crossbow:   {type:'weapon',    emoji:'➕', damage:25,cooldown:5000,range:999, special:'projectile',projSpeed:16, desc:'Faster projectile, 5s CD'},
-  balloon:    {type:'passive',   emoji:'🎈', speedBonus:1.3, desc:'Speed boost while held'},
-  apple:      {type:'consumable',emoji:'🍎', special:'heal',  value:20,  desc:'Click F to eat: heals 20hp'},
-  banana:     {type:'consumable',emoji:'🍌', special:'heal',  value:15,  desc:'Click F to eat: heals 15hp'},
-  chocolate:  {type:'consumable',emoji:'🍫', special:'speed_burst',value:10, desc:'Click F: speed boost 10s'},
-  bear_trap:  {type:'trap',      emoji:'🪤', special:'trap',  trapDmg:15,trapSlow:0.4,trapSlowDur:5000,  trapRadius:1.5,trapLife:60000, desc:'F to place — damages+slows enemies'},
-  web_trap:   {type:'trap',      emoji:'🕸️', special:'web',   trapDmg:0, trapSlow:0.25,trapSlowDur:3000, trapRadius:2.0,trapLife:30000, desc:'F to place — slows enemies'},
-  poison_apple:{type:'consumable',emoji:'🍏',special:'poison',value:10,  desc:'F to eat — it\'s poisoned!'},
-  golden_apple:{type:'consumable',emoji:'✨', special:'golden',value:100, desc:'F to eat — full heal + 5s immunity!'},
+  sword:             {type:'weapon',        emoji:'⚔️', damage:30, cooldown:2000, range:3.5, special:'slash',         desc:'30dmg slash, 2s CD'},
+  dagger:            {type:'weapon',        emoji:'🗡️', damage:15, cooldown:1000, range:2.5, special:'poke',          desc:'15dmg poke, 1s CD'},
+  katana:            {type:'weapon',        emoji:'🌀', damage:20, cooldown:1500, range:3.5, special:'slash',         speedBonus:1.4, desc:'Faster + 20dmg'},
+  spear:             {type:'weapon',        emoji:'🔱', damage:10, cooldown:2000, range:6.0, special:'bleed',         desc:'10+10 bleed, long range'},
+  bow:               {type:'weapon',        emoji:'🏹', damage:20, cooldown:3000, range:999, special:'projectile',    projSpeed:10, desc:'Slow projectile'},
+  crossbow:          {type:'weapon',        emoji:'➕', damage:25, cooldown:5000, range:999, special:'projectile',    projSpeed:16, desc:'Faster projectile'},
+  glass_shard:       {type:'weapon',        emoji:'💎', damage:20, cooldown:0,    range:3.0, special:'glass',         desc:'20dmg+bleed, one use'},
+  water_scepter:     {type:'weapon',        emoji:'💧', damage:0,  cooldown:30000,range:15,  special:'scepter_water', desc:'Knockback beam, 30s CD'},
+  fire_scepter:      {type:'weapon',        emoji:'🔥', damage:15, cooldown:60000,range:15,  special:'scepter_fire',  desc:'Fire effect+15dmg, 60s CD'},
+  healing_scepter:   {type:'weapon',        emoji:'💚', damage:0,  cooldown:45000,range:15,  special:'scepter_heal',  desc:'Heal a friend 10hp, 45s CD'},
+  friendship_bracelet:{type:'passive_weapon',emoji:'💞',cooldown:0, range:6,                special:'friend',         desc:'Friend nearby players'},
+  balloon:           {type:'passive',       emoji:'🎈', speedBonus:1.3, desc:'Speed boost while selected'},
+  apple:             {type:'consumable',    emoji:'🍎', special:'heal',        value:20,  desc:'F: heal 20hp'},
+  banana:            {type:'consumable',    emoji:'🍌', special:'heal',        value:15,  desc:'F: heal 15hp'},
+  chocolate:         {type:'consumable',    emoji:'🍫', special:'speed_burst', value:10,  desc:'F: speed boost 10s'},
+  rage_potion:       {type:'consumable',    emoji:'😡', special:'rage',                   desc:'2x DMG, max HP -30'},
+  fly_potion:        {type:'consumable',    emoji:'🪶', special:'fly',         value:10,  desc:'F: fly for 10s'},
+  shield_potion:     {type:'consumable',    emoji:'🛡', special:'shield',                 desc:'F: absorb 1 hit'},
+  bear_trap:         {type:'trap',          emoji:'🪤', special:'trap',  trapDmg:15,trapSlow:0.4,trapSlowDur:5000,trapRadius:1.5,trapLife:30000, desc:'F to place — 30s, damages+slows'},
+  web_trap:          {type:'trap',          emoji:'🕸️', special:'web',   trapDmg:0, trapSlow:0.25,trapSlowDur:3000,trapRadius:3.5,trapLife:40000, desc:'F to place — 40s, slows'},
+  poison_apple:      {type:'consumable',    emoji:'🍏', special:'poison',      value:10,  desc:'F: ...it was poisoned!'},
+  golden_apple:      {type:'consumable',    emoji:'✨', special:'golden',      value:100, desc:'F: full heal+5s immunity'},
 };
 
 // Fixed spawn table
 const SPAWN_TABLE=[
-  {id:'w1',def:'sword',    x:8,  z:5  },{id:'w2',def:'dagger',  x:-6, z:3  },
-  {id:'w3',def:'katana',   x:12, z:-10},{id:'w4',def:'spear',   x:-3, z:12 },
-  {id:'w5',def:'flail',    x:0,  z:-8 },{id:'w6',def:'bow',     x:15, z:2  },
-  {id:'w7',def:'crossbow', x:-12,z:-6 },
-  {id:'c1',def:'balloon',  x:4,  z:15 },{id:'c2',def:'apple',   x:-8, z:-8 },
-  {id:'c3',def:'banana',   x:10, z:10 },{id:'c4',def:'chocolate',x:-10,z:6 },
-  {id:'c5',def:'bear_trap',x:6,  z:-6 },{id:'c6',def:'web_trap', x:-4, z:-14},
-  {id:'c7',def:'poison_apple',x:14,z:-4},{id:'g1',def:'golden_apple',x:0,z:0},
+  {id:'w1',def:'sword',             x:8,   z:5  },{id:'w2',def:'dagger',           x:-6,  z:3  },
+  {id:'w3',def:'katana',            x:12,  z:-10},{id:'w4',def:'spear',            x:-3,  z:12 },
+  {id:'w5',def:'bow',               x:0,   z:-8 },{id:'w6',def:'crossbow',         x:15,  z:2  },
+  {id:'w7',def:'glass_shard',       x:-12, z:-6 },{id:'w8',def:'water_scepter',    x:5,   z:-12},
+  {id:'w9',def:'fire_scepter',      x:-8,  z:8  },{id:'wa',def:'healing_scepter',  x:10,  z:-5 },
+  {id:'wb',def:'friendship_bracelet',x:-5, z:-5 },
+  {id:'c1',def:'balloon',           x:4,   z:15 },{id:'c2',def:'apple',            x:-8,  z:-8 },
+  {id:'c3',def:'banana',            x:10,  z:10 },{id:'c4',def:'chocolate',        x:-10, z:6  },
+  {id:'c5',def:'bear_trap',         x:6,   z:-6 },{id:'c6',def:'web_trap',         x:-4,  z:-14},
+  {id:'c7',def:'poison_apple',      x:14,  z:-4 },{id:'c8',def:'rage_potion',      x:-14, z:4  },
+  {id:'c9',def:'fly_potion',        x:8,   z:-14},{id:'ca',def:'shield_potion',    x:-8,  z:14 },
+  {id:'g1',def:'golden_apple',      x:0,   z:0  },
 ];
 
 // ══════════════════════════════════════════════════════
@@ -216,8 +231,11 @@ const MAX_HP=100,PLAYER_SPEED=6,PLAYER_HEIGHT=1.0,PICKUP_DIST=2.8;
 const MAX_FLOOR=20;
 const keys={},bubbles={},projectiles=[];
 let lastAttackTime=0,speedMult=1,goldenImmune=false;
-// Flail physics
-let flailAngle=0,flailVel=0,prevYawForFlail=0;
+let maxHPCap=100,damageMult=1,raging=false;
+let flying=false; let myShield=false;
+let onFire=false,fireVel={x:0,z:0};
+let knockbackVel={x:0,z:0};
+const friends=new Set();
 const _v3=new THREE.Vector3();
 
 // ══════════════════════════════════════════════════════
@@ -275,29 +293,6 @@ function buildItemMesh(defKey){
       const ring=new THREE.Mesh(new THREE.TorusGeometry(.03,.008,4,8),makeMat(0xcc8800));
       ring.position.y=.44;ring.rotation.x=Math.PI/2;
       g.add(pole,tip,ring);
-      break;}
-
-    // ── FLAIL: handle + chain + ball
-    case'flail':{
-      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.4,8),makeMat(0x553311));
-      handle.position.y=-.2;
-      // chain links (3 small tori)
-      for(let i=0;i<3;i++){
-        const link=new THREE.Mesh(new THREE.TorusGeometry(.04,.012,4,6),makeMat(0x888888));
-        link.position.y=.1+i*.12;link.rotation.x=i%2?Math.PI/2:0;
-        g.add(link);
-      }
-      const ball=new THREE.Mesh(new THREE.SphereGeometry(.1,8,8),makeMat(0x555555,0x222222,.1));
-      ball.position.y=.48;
-      // spikes on ball
-      for(let i=0;i<6;i++){
-        const a=i*Math.PI/3;
-        const spike=new THREE.Mesh(new THREE.ConeGeometry(.025,.08,4),makeMat(0x777777));
-        spike.position.set(Math.cos(a)*.1,.48+Math.sin(a)*.1,0);
-        spike.lookAt(Math.cos(a)*.3,.48+Math.sin(a)*.3,0);
-        g.add(spike);
-      }
-      g.add(handle,ball);
       break;}
 
     // ── BOW: arc + string
@@ -396,20 +391,18 @@ function buildItemMesh(defKey){
       g.add(base,spring);
       break;}
 
-    // ── WEB TRAP: flat disc with web lines
+    // ── WEB TRAP: large flat disc with web lines (big!)
     case'web_trap':{
-      const disc=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.02,16),makeMat(0xdddddd,0xffffff,.1,true,.7));
+      const disc=new THREE.Mesh(new THREE.CylinderGeometry(.9,.9,.02,20),makeMat(0xdddddd,0xffffff,.1,true,.55));
       disc.position.y=-.04;
-      // radial lines
-      for(let i=0;i<8;i++){
-        const a=i*Math.PI/4;
-        const lg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-.03,0),new THREE.Vector3(Math.cos(a)*.26,-.03,Math.sin(a)*.26)]);
-        g.add(new THREE.Line(lg,new THREE.LineBasicMaterial({color:0xaaaaaa,transparent:true,opacity:.7})));
+      for(let i=0;i<10;i++){
+        const a=i*Math.PI/5;
+        const lg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-.03,0),new THREE.Vector3(Math.cos(a)*.85,-.03,Math.sin(a)*.85)]);
+        g.add(new THREE.Line(lg,new THREE.LineBasicMaterial({color:0xbbbbbb,transparent:true,opacity:.65})));
       }
-      // rings
-      for(let r=1;r<=3;r++){
-        const rg=new THREE.RingGeometry(r*.08,r*.08+.006,16);
-        const rm=new THREE.Mesh(rg,makeMat(0xcccccc,0,0,true,.6));
+      for(let r=1;r<=5;r++){
+        const rg=new THREE.RingGeometry(r*.16,r*.16+.01,20);
+        const rm=new THREE.Mesh(rg,makeMat(0xcccccc,0,0,true,.55));
         rm.rotation.x=-Math.PI/2;rm.position.y=-.03;
         g.add(rm);
       }
@@ -440,6 +433,77 @@ function buildItemMesh(defKey){
       const light=new THREE.PointLight(0xffdd00,1.5,5);
       g.add(body,stem,leaf,aura,light);
       break;}
+
+    case'water_scepter':{
+      const staff=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.75,8),makeMat(0x336699));
+      staff.position.y=-.05;
+      const orb=new THREE.Mesh(new THREE.SphereGeometry(.12,10,10),makeMat(0x00aaff,0x0066ff,.3,true,.85));
+      orb.position.y=.42;
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(.15,.015,6,12),makeMat(0x55aaff));
+      ring.position.y=.42;
+      for(let i=0;i<4;i++){const a=i*Math.PI/2;const drop=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),makeMat(0x88ccff,0x44aaff,.3,true,.7));drop.position.set(Math.cos(a)*.2,.36,Math.sin(a)*.2);g.add(drop);}
+      g.add(staff,orb,ring);break;}
+
+    case'fire_scepter':{
+      const staff=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.75,8),makeMat(0x663311));
+      staff.position.y=-.05;
+      const orb=new THREE.Mesh(new THREE.SphereGeometry(.12,10,10),makeMat(0xff4400,0xff8800,.4,true,.9));
+      orb.position.y=.42;
+      for(let i=0;i<5;i++){const a=i*Math.PI*2/5;const flame=new THREE.Mesh(new THREE.ConeGeometry(.04,.15,5),makeMat(0xff6600,0xff3300,.4,true,.8));flame.position.set(Math.cos(a)*.1,.56,Math.sin(a)*.1);flame.rotation.z=Math.cos(a)*.5;flame.rotation.x=Math.sin(a)*.5;g.add(flame);}
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.18,8,8),makeMat(0xff6600,0xff4400,.3,true,.15));glow.position.y=.42;
+      g.add(staff,orb,glow);break;}
+
+    case'healing_scepter':{
+      const staff=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.75,8),makeMat(0x226633));
+      staff.position.y=-.05;
+      const orb=new THREE.Mesh(new THREE.SphereGeometry(.12,10,10),makeMat(0x00ff88,0x00cc44,.3,true,.88));
+      orb.position.y=.42;
+      const hb=new THREE.Mesh(new THREE.BoxGeometry(.2,.04,.04),makeMat(0xffffff));hb.position.y=.42;
+      const vb=new THREE.Mesh(new THREE.BoxGeometry(.04,.2,.04),makeMat(0xffffff));vb.position.y=.42;
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.17,8,8),makeMat(0x00ff88,0x00ee44,.3,true,.13));glow.position.y=.42;
+      g.add(staff,orb,hb,vb,glow);break;}
+
+    case'friendship_bracelet':{
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(.2,.045,8,18),makeMat(0xff88cc,0xff2288,.2));
+      for(let i=0;i<5;i++){const a=i*Math.PI*2/5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.045),makeMat(0xff44aa,0xff2288,.4));gem.position.set(Math.cos(a)*.2,Math.sin(a)*.2,0);g.add(gem);}
+      g.add(ring);break;}
+
+    case'glass_shard':{
+      const body=new THREE.Mesh(new THREE.BoxGeometry(.08,.35,.04),makeMat(0xaaddff,0x88ccff,.3,true,.72));
+      body.rotation.z=.15;
+      const body2=new THREE.Mesh(new THREE.BoxGeometry(.06,.22,.04),makeMat(0xbbeeFF,0xaaddff,.3,true,.6));
+      body2.position.set(.06,-.06,0);body2.rotation.z=-.5;
+      const shine=new THREE.Mesh(new THREE.BoxGeometry(.02,.15,.02),makeMat(0xffffff,0xffffff,.5,true,.5));
+      shine.position.set(-.02,.05,0);
+      g.add(body,body2,shine);break;}
+
+    case'rage_potion':{
+      const bottle=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.28,10),makeMat(0x551111));
+      const liquid=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.22,10),makeMat(0xff2222,0xdd0000,.3,true,.88));
+      liquid.position.y=-.02;
+      const neck=new THREE.Mesh(new THREE.CylinderGeometry(.032,.06,.1,8),makeMat(0x441111));neck.position.y=.19;
+      const cork=new THREE.Mesh(new THREE.CylinderGeometry(.034,.034,.055,8),makeMat(0xaa8855));cork.position.y=.27;
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.14,8,8),makeMat(0xff0000,0xff0000,.5,true,.12));
+      g.add(bottle,liquid,neck,cork,glow);break;}
+
+    case'fly_potion':{
+      const bottle=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.28,10),makeMat(0x113355));
+      const liquid=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.22,10),makeMat(0x00ccff,0x0088cc,.3,true,.88));
+      liquid.position.y=-.02;
+      const neck=new THREE.Mesh(new THREE.CylinderGeometry(.032,.06,.1,8),makeMat(0x112244));neck.position.y=.19;
+      const cork=new THREE.Mesh(new THREE.CylinderGeometry(.034,.034,.055,8),makeMat(0xaa8855));cork.position.y=.27;
+      [-1,1].forEach(s=>{const wing=new THREE.Mesh(new THREE.BoxGeometry(.16,.07,.02),makeMat(0x88ddff,0x00aaff,.2,true,.6));wing.position.set(s*.14,0,0);wing.rotation.z=s*.35;g.add(wing);});
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.14,8,8),makeMat(0x00ccff,0x00aaff,.3,true,.1));
+      g.add(bottle,liquid,neck,cork,glow);break;}
+
+    case'shield_potion':{
+      const bottle=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.28,10),makeMat(0x554400));
+      const liquid=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.22,10),makeMat(0xffcc00,0xdd9900,.3,true,.88));
+      liquid.position.y=-.02;
+      const neck=new THREE.Mesh(new THREE.CylinderGeometry(.032,.06,.1,8),makeMat(0x443300));neck.position.y=.19;
+      const cork=new THREE.Mesh(new THREE.CylinderGeometry(.034,.034,.055,8),makeMat(0xaa8855));cork.position.y=.27;
+      const glow=new THREE.Mesh(new THREE.SphereGeometry(.14,8,8),makeMat(0xffcc00,0xffaa00,.3,true,.12));
+      g.add(bottle,liquid,neck,cork,glow);break;}
 
     default:{
       g.add(new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),makeMat(0xaaaaaa)));
@@ -519,7 +583,7 @@ function launch(u){
     if(d.banned){showBanScreen();return;}
     if(d.warned===true){alert("⚠️ ADMIN WARNING: Follow the rules.");db.ref("users/"+u).update({warned:false});}
   });
-  initGame(); initFirebase(); initPVP(); startAutoSpawn();
+  requestAnimationFrame(()=>setTimeout(()=>{initGame();initFirebase();initPVP();initFriendship();startAutoSpawn();},60));
 }
 
 // ══════════════════════════════════════════════════════
@@ -641,8 +705,7 @@ function setupInput(){
     prevYawForFlail=yaw;
     yaw-=dx*.002; pitch-=e.movementY*.002;
     pitch=Math.max(-Math.PI/3,Math.min(Math.PI/4,pitch));
-    // Flail physics: mouse movement drives flail velocity
-    if(pvpMode) checkFlailSwing(Math.abs(dx),dx);
+
   });
 }
 
@@ -762,12 +825,16 @@ function handleF(){
   if(!item){showNotif("Nothing selected.");return;}
   const def=DEFS[item.defKey];
   if(def.type==='weapon'){
-    if(def.special==='flail'){showNotif("Flail: flick mouse to swing!");return;}
+    const sp=def.special;
+    if(sp==='scepter_water'||sp==='scepter_fire'||sp==='scepter_heal'){tryAttackScepter(item,def);return;}
+    if(sp==='glass'){tryGlassShard(item,def);return;}
     tryAttack();
   } else if(def.type==='consumable'){
     useConsumable(item,def);
   } else if(def.type==='trap'){
     placeTrap(item,def);
+  } else if(def.type==='passive_weapon'){
+    tryFriendshipBracelet(item);
   } else if(def.type==='passive'){
     showNotif(`${def.emoji} ${item.defKey} — effect active while selected`);
   }
@@ -787,6 +854,19 @@ function useConsumable(item,def){
   } else if(def.special==='poison'){
     dealDamageToSelf(def.value,'Poison Apple','poison',null);
     showNotif('💀 It was poisoned!');
+  } else if(def.special==='rage'){
+    if(raging){showNotif('Already raging!');return;}
+    raging=true; maxHPCap=70; myHP=Math.min(myHP,70); damageMult=2; updateHealthUI();
+    addStatus('😡 Rage',0); showNotif('😡 RAGE! 2x DMG, max HP 70!');
+    sysChat(`😡 ${currentUser} drank a Rage Potion!`);
+    db.ref("claregame_players/"+currentUser).update({raging:true});
+  } else if(def.special==='fly'){
+    flying=true; addStatus('🪶 Flying',def.value*1000);
+    showNotif('🪶 Flying! Space=up, Shift=down');
+    setTimeout(()=>{flying=false;camera.position.y=PLAYER_HEIGHT;removeStatus('🪶 Flying');},def.value*1000);
+  } else if(def.special==='shield'){
+    myShield=true; addStatus('🛡 Shield',0); showNotif('🛡 Shield active!');
+    document.getElementById('shield-ring').style.display='block';
   } else if(def.special==='golden'){
     myHP=MAX_HP; updateHealthUI(); goldenImmune=true;
     addStatus('✨ Immune',5000); showNotif('✨ Full heal + 5s immunity!');
@@ -832,17 +912,19 @@ function removeTrap(id){
 function checkTraps(){
   const px=camera.position.x,pz=camera.position.z;
   placedTraps.forEach(trap=>{
-    if(trap.owner===currentUser||trap.triggered) return;
+    if(trap.owner===currentUser) return;
     const dx=trap.x-px,dz=trap.z-pz;
     const def=DEFS[trap.defKey];
-    if(Math.sqrt(dx*dx+dz*dz)<(def.trapRadius||1.5)){
-      if(def.special==='trap'){
+    const inRange=Math.sqrt(dx*dx+dz*dz)<(def.trapRadius||1.5);
+    if(inRange){
+      if(def.special==='trap'&&!trap.triggered){
         trap.triggered=true;
         dealDamageToSelf(def.trapDmg,'Bear Trap','bear_trap',trap.owner);
         addStatus('🐢 Slowed',def.trapSlowDur);
         const orig=speedMult; speedMult=def.trapSlow;
         setTimeout(()=>{speedMult=orig;applyPassiveEffects();removeStatus('🐢 Slowed');},def.trapSlowDur);
-        showNotif('🪤 Bear Trap!'); removeTrap(trap.id);
+        showNotif('🪤 Bear Trap!');
+        removeTrap(trap.id); // removes from Firebase → syncs for everyone
       } else if(def.special==='web'){
         if(!trap._webActive){
           trap._webActive=true;
@@ -887,8 +969,10 @@ function tryAttack(){
 }
 
 function sendHit(target,dmg,weapon){
-  db.ref("claregame_hits/"+target).set({from:currentUser,weapon,dmg,time:Date.now()});
-  showNotif(`⚔️ Hit ${target}! (-${dmg}hp)`);
+  if(friends.has(target)){showNotif("Can't attack your friend!");return;}
+  const finalDmg=Math.round(dmg*damageMult);
+  db.ref("claregame_hits/"+target).set({from:currentUser,weapon,dmg:finalDmg,time:Date.now()});
+  showNotif(`⚔️ Hit ${target}! (-${finalDmg}hp)`);
 }
 function sendBleed(target,total,secs){
   db.ref("claregame_bleed/"+target).set({from:currentUser,dps:total/secs,secs,time:Date.now()});
@@ -906,37 +990,6 @@ function fireProjectile(def,defKey){
   const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
   scene.add(mesh);
   projectiles.push({mesh,vel:dir.multiplyScalar(def.projSpeed),owner:currentUser,dmg:def.damage,weapon:defKey,born:Date.now(),hit:false});
-}
-
-// ══════════════════════════════════════════════════════
-//  FLAIL PHYSICS
-// ══════════════════════════════════════════════════════
-let flailLastFire=0;
-function checkFlailSwing(absMovX,movX){
-  const item=inventory[selectedSlot];
-  if(!item||item.defKey!=='flail') return;
-  // Add velocity proportional to mouse speed
-  flailVel+=movX*.01;
-  flailVel*=.85; // damping
-  flailAngle+=flailVel;
-  // Update hand mesh rotation to show swinging
-  if(handItemMesh){
-    handItemMesh.rotation.z=flailAngle*.6;
-    handItemMesh.rotation.x=Math.abs(flailVel)*2;
-  }
-  // If moving fast enough — deal damage
-  const now=Date.now();
-  if(Math.abs(flailVel)>.18&&pvpMode&&now-flailLastFire>600){
-    flailLastFire=now;
-    const px=camera.position.x,pz=camera.position.z;
-    Object.entries(otherPlayers).forEach(([u,op])=>{
-      const dx=op.mesh.position.x-px,dz=op.mesh.position.z-pz;
-      if(Math.sqrt(dx*dx+dz*dz)<4.5){
-        sendHit(u,40,'flail'); flashMesh(op.mesh,0xff8800);
-        showNotif(`⚙️ Flail hit ${u}! (-40hp)`);
-      }
-    });
-  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -980,6 +1033,25 @@ function initPVP(){
     applyBleed(b.dps,b.secs,b.from); db.ref("claregame_bleed/"+currentUser).remove();
   });
   db.ref("claregame_pvp").on("value",snap=>{pvpMode=snap.val()===true;updatePVPUI();});
+  db.ref("claregame_push/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const p=snap.val(); if(Date.now()-p.time>3000) return;
+    db.ref("claregame_push/"+currentUser).remove();
+    applyKnockback(p.dx,p.dz,p.str||7,p.dur||5000);
+  });
+  db.ref("claregame_fire/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const f=snap.val(); if(Date.now()-f.time>3000||!pvpMode) return;
+    db.ref("claregame_fire/"+currentUser).remove();
+    applyFireEffect(f.from);
+  });
+  db.ref("claregame_heal/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const h=snap.val(); if(Date.now()-h.time>3000) return;
+    db.ref("claregame_heal/"+currentUser).remove();
+    myHP=Math.min(maxHPCap,myHP+h.amount); updateHealthUI();
+    showNotif(`💚 Healed +${h.amount}hp by ${h.from}!`);
+  });
   db.ref("claregame_hp").on("value",snap=>{
     snap.forEach(c=>{if(c.key!==currentUser&&otherPlayers[c.key]) otherPlayers[c.key].hp=c.val();});
   });
@@ -994,15 +1066,23 @@ function initPVP(){
       }
     });
   });
-  // Listen for traps placed by others
+  // Listen for traps placed by others + sync removals
   db.ref("claregame_traps").on("value",snap=>{
+    // Remove locally any trap no longer in Firebase
+    for(let i=placedTraps.length-1;i>=0;i--){
+      if(!snap.hasChild(placedTraps[i].id)){
+        scene.remove(placedTraps[i].mesh); placedTraps.splice(i,1);
+      }
+    }
     snap.forEach(c=>{
       const id=c.key; const d=c.val();
-      if(d.by===currentUser) return; // already placed locally
+      if(d.by===currentUser) return;
       if(!placedTraps.find(t=>t.id===id)){
-        const mesh=buildItemMesh(d.defKey);
-        mesh.position.set(d.x,.05,d.z); scene.add(mesh);
-        placedTraps.push({id,defKey:d.defKey,mesh,x:d.x,z:d.z,owner:d.by,placedAt:Date.now(),triggered:false});
+        try{
+          const mesh=buildItemMesh(d.defKey);
+          mesh.position.set(d.x,.05,d.z); scene.add(mesh);
+          placedTraps.push({id,defKey:d.defKey,mesh,x:d.x,z:d.z,owner:d.by,placedAt:Date.now(),triggered:false});
+        }catch(e){console.warn('trap mesh error',e);}
       }
     });
   });
@@ -1021,6 +1101,11 @@ function initPVP(){
 }
 
 function dealDamageToSelf(dmg,weaponName,defKey,from){
+  if(myShield){
+    myShield=false; removeStatus('🛡 Shield');
+    document.getElementById('shield-ring').style.display='none';
+    showNotif('🛡 Shield absorbed the hit!'); return;
+  }
   myHP=Math.max(0,myHP-dmg); updateHealthUI();
   showNotif(`💥 ${weaponName}${from?' from '+from:''} (-${dmg}hp)`);
   const f=document.createElement('div');
@@ -1044,7 +1129,7 @@ function updatePVPUI(){
 }
 function updateHealthUI(){
   document.getElementById('hp-val').innerText=myHP;
-  const p=myHP/MAX_HP*100;
+  const p=myHP/maxHPCap*100;
   const fill=document.getElementById('hp-fill');
   fill.style.width=p+'%';
   fill.style.background=p>60?'var(--primary)':p>30?'#f39c12':'#eb4d4b';
@@ -1104,7 +1189,7 @@ function resetAllItems(){
 // ══════════════════════════════════════════════════════
 function startAutoSpawn(){
   setInterval(()=>{
-    const wTypes=['sword','dagger','katana','spear','flail','bow','crossbow'];
+    const wTypes=['sword','dagger','katana','spear','bow','crossbow','glass_shard','water_scepter','fire_scepter','healing_scepter'];
     const wCount=Object.values(worldItemMeshes).filter(m=>DEFS[m.userData.defKey]?.type==='weapon').length;
     if(wCount>=MAX_FLOOR) return;
     const pick=wTypes[Math.floor(Math.random()*wTypes.length)];
@@ -1115,6 +1200,144 @@ function startAutoSpawn(){
     scene.add(mesh); worldItemMeshes[id]=mesh;
     sysChat(`⚔️ A ${DEFS[pick].emoji} ${pick} appeared!`);
   },60000);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCEPTERS, GLASS SHARD, FRIENDSHIP
+// ══════════════════════════════════════════════════════
+function tryAttackScepter(item,def){
+  if(!pvpMode&&def.special!=='scepter_heal'){showNotif('PVP is OFF');return;}
+  const now=Date.now();
+  if(now-lastAttackTime<def.cooldown){showNotif(`⏱ ${((def.cooldown-(now-lastAttackTime))/1000).toFixed(1)}s`);return;}
+  lastAttackTime=now;
+  const lookDir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+  const origin=camera.position.clone();
+  showScepterBeam(def.special,lookDir,origin);
+  let bestU=null,bestDot=0.82;
+  Object.entries(otherPlayers).forEach(([u,op])=>{
+    const tv=new THREE.Vector3(op.mesh.position.x-origin.x,0,op.mesh.position.z-origin.z);
+    const dist=tv.length();
+    if(dist<.5||dist>def.range) return;
+    const dot=lookDir.dot(tv.normalize());
+    if(dot>bestDot){bestDot=dot;bestU=u;}
+  });
+  if(!bestU){showNotif('No target in range!');return;}
+  if(def.special==='scepter_water'){
+    const op=otherPlayers[bestU];
+    const pd=new THREE.Vector3(op.mesh.position.x-origin.x,0,op.mesh.position.z-origin.z).normalize();
+    db.ref("claregame_push/"+bestU).set({dx:pd.x,dz:pd.z,str:7,dur:5000,time:Date.now(),from:currentUser});
+    db.ref("claregame_fire/"+bestU).remove();
+    showNotif(`💧 Water blast hit ${bestU}!`);
+  } else if(def.special==='scepter_fire'){
+    sendHit(bestU,def.damage,'fire_scepter');
+    db.ref("claregame_fire/"+bestU).set({from:currentUser,time:Date.now()});
+    showNotif(`🔥 Fire blast hit ${bestU}!`);
+  } else if(def.special==='scepter_heal'){
+    if(!friends.has(bestU)){showNotif('Can only heal friends!');return;}
+    db.ref("claregame_heal/"+bestU).set({from:currentUser,amount:10,time:Date.now()});
+    showNotif(`💚 Healing ${bestU}!`);
+  }
+}
+
+function showScepterBeam(sp,dir,origin){
+  const col={scepter_water:0x00aaff,scepter_fire:0xff4400,scepter_heal:0x00ff88}[sp]||0xffffff;
+  const grp=new THREE.Group();
+  for(let i=1;i<=14;i++){
+    const sp2=new THREE.Mesh(new THREE.SphereGeometry(i<5?.07:.045,6,6),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.75-i*.04}));
+    sp2.position.copy(origin.clone().addScaledVector(dir,i));sp2.position.y=PLAYER_HEIGHT*.8;
+    grp.add(sp2);
+  }
+  scene.add(grp);
+  let age=0;
+  const fade=setInterval(()=>{age++;grp.traverse(c=>{if(c.isMesh&&c.material)c.material.opacity=Math.max(0,c.material.opacity-.06);});if(age>10){clearInterval(fade);scene.remove(grp);}},80);
+}
+
+function tryGlassShard(item,def){
+  if(!pvpMode){showNotif('PVP is OFF');return;}
+  const px=camera.position.x,pz=camera.position.z;
+  let hit=false;
+  Object.entries(otherPlayers).forEach(([u,op])=>{
+    if(friends.has(u)) return;
+    const dx=op.mesh.position.x-px,dz=op.mesh.position.z-pz;
+    if(Math.sqrt(dx*dx+dz*dz)<def.range){
+      sendHit(u,def.damage,'glass_shard'); sendBleed(u,10,5);
+      hit=true; flashMesh(op.mesh,0xaaddff);
+    }
+  });
+  showNotif(hit?'💎 Slash! Bleeding!':'No one in range!');
+  // breaks on use
+  inventory[selectedSlot]=null; updateInventoryUI(); updateHandItem(); applyPassiveEffects();
+  delete pickedUpItems[item.id]; db.ref("claregame_items/"+item.id).remove();
+}
+
+function tryFriendshipBracelet(item){
+  const px=camera.position.x,pz=camera.position.z;
+  let bestU=null,bestDist=DEFS.friendship_bracelet.range;
+  Object.entries(otherPlayers).forEach(([u,op])=>{
+    const d=Math.sqrt((op.mesh.position.x-px)**2+(op.mesh.position.z-pz)**2);
+    if(d<bestDist){bestDist=d;bestU=u;}
+  });
+  if(!bestU){showNotif('No one nearby!');return;}
+  if(friends.has(bestU)){showNotif(`Already friends with ${bestU}!`);return;}
+  showModal(`<h3>💞 Friend Request</h3><p style="margin:10px 0;font-size:13px;color:#aaa;">Friend <b style="color:#a29bfe;">${bestU}</b>?</p>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+    <button onclick="sendFriendReq('${bestU}')" style="background:#2ed573;border:none;color:white;padding:8px 18px;border-radius:6px;cursor:pointer;">Yes!</button>
+    <button onclick="closeModal()" style="background:#444;border:none;color:white;padding:8px 18px;border-radius:6px;cursor:pointer;">No</button></div>`);
+}
+
+function sendFriendReq(target){
+  closeModal();
+  db.ref("claregame_friendreq/"+target).set({from:currentUser,time:Date.now()});
+  showNotif(`💞 Friend request sent to ${target}!`);
+}
+
+function acceptFriend(from){
+  closeModal();
+  const key=[currentUser,from].sort().join('__');
+  db.ref("claregame_friends/"+key).set({a:currentUser,b:from,time:Date.now()});
+  friends.add(from);
+  showNotif(`💞 Now friends with ${from}!`);
+  sysChat(`💞 ${currentUser} and ${from} are friends!`);
+}
+
+function initFriendship(){
+  db.ref("claregame_friendreq/"+currentUser).on("value",snap=>{
+    if(!snap.exists()) return;
+    const req=snap.val();
+    if(Date.now()-req.time>60000) return;
+    db.ref("claregame_friendreq/"+currentUser).remove();
+    showModal(`<h3>💞 Friend Request</h3><p style="margin:10px 0;font-size:13px;color:#aaa;"><b style="color:#a29bfe;">${req.from}</b> wants to be friends!</p>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+      <button onclick="acceptFriend('${req.from}')" style="background:#2ed573;border:none;color:white;padding:8px 18px;border-radius:6px;cursor:pointer;">Accept!</button>
+      <button onclick="closeModal()" style="background:#444;border:none;color:white;padding:8px 18px;border-radius:6px;cursor:pointer;">Decline</button></div>`);
+  });
+  db.ref("claregame_friends").on("value",snap=>{
+    friends.clear();
+    snap.forEach(c=>{const p=c.key.split('__');if(p[0]===currentUser)friends.add(p[1]);if(p[1]===currentUser)friends.add(p[0]);});
+  });
+}
+
+function applyKnockback(dx,dz,str,dur){
+  knockbackVel={x:dx*str,z:dz*str};
+  addStatus('💧 Pushed',dur);
+  setTimeout(()=>{knockbackVel={x:0,z:0};removeStatus('💧 Pushed');},dur);
+}
+
+function applyFireEffect(from){
+  if(onFire||goldenImmune) return;
+  onFire=true;
+  addStatus('🔥 On Fire',5000);
+  showNotif("🔥 You're on fire!");
+  const ov=document.createElement('div');
+  ov.id='fire-overlay'; ov.style.cssText='position:fixed;inset:0;border:8px solid rgba(255,80,0,.4);pointer-events:none;z-index:500;animation:flicker .25s infinite;';
+  document.body.appendChild(ov);
+  let t=0;
+  const iv=setInterval(()=>{
+    t++;
+    fireVel={x:(Math.random()-.5)*5,z:(Math.random()-.5)*5};
+    dealDamageToSelf(3,'Fire','fire',from);
+    if(t>=5||myHP<=0){clearInterval(iv);onFire=false;fireVel={x:0,z:0};removeStatus('🔥 On Fire');const e=document.getElementById('fire-overlay');if(e)e.remove();}
+  },1000);
 }
 
 // ══════════════════════════════════════════════════════
@@ -1154,6 +1377,14 @@ function initFirebase(){
       }
       otherPlayers[u].mesh.position.set(d.x,0,d.z);
       otherPlayers[u].mesh.rotation.y=d.yaw||0;
+      if(d.raging&&!otherPlayers[u]._raging){
+        otherPlayers[u]._raging=true;
+        otherPlayers[u].mesh.traverse(ch=>{if(ch.isMesh&&ch.material?.color)ch.material.color.set(0xff2222);});
+      } else if(!d.raging&&otherPlayers[u]._raging){
+        otherPlayers[u]._raging=false;
+        const hue=Math.abs(hashCode(u))%360;const col=new THREE.Color(`hsl(${hue},70%,55%)`);
+        otherPlayers[u].mesh.traverse(ch=>{if(ch.isMesh&&ch.material?.color)ch.material.color.set(col.getHex());});
+      }
     });
     Object.keys(otherPlayers).forEach(u=>{
       if(!alive[u]){
@@ -1178,7 +1409,8 @@ function initFirebase(){
     db.ref("claregame_players/"+currentUser).update({
       x:+camera.position.x.toFixed(2),z:+camera.position.z.toFixed(2),
       yaw:+yaw.toFixed(3),t:Date.now(),
-      holding:item?item.defKey:null
+      holding:item?item.defKey:null,
+      raging:raging
     });
     db.ref("claregame_hp/"+currentUser).set(myHP);
   },100);
@@ -1211,8 +1443,8 @@ function animate(){
     p.mesh.position.y=Math.max(.4,p.mesh.position.y-dt*.3);
     if(pvpMode&&!p.hit){
       for(const [u,op] of Object.entries(otherPlayers)){
-        const dx=op.mesh.position.x-p.mesh.position.x, dz=op.mesh.position.z-p.mesh.position.z;
-        if(Math.sqrt(dx*dx+dz*dz)<1.0){
+        const dx=op.mesh.position.x-p.mesh.position.x, dz=op.mesh.position.z-p.mesh.position.z, dy=(op.mesh.position.y+0.85)-p.mesh.position.y;
+        if(Math.sqrt(dx*dx+dz*dz+dy*dy)<1.1){
           sendHit(u,p.dmg,p.weapon); flashMesh(op.mesh,0xffff00); p.hit=true;
           // Arrow sticks in player
           const stuckPos=p.mesh.position.clone().sub(op.mesh.position);
@@ -1232,13 +1464,6 @@ function animate(){
   const t=Date.now()*.001;
   Object.values(worldItemMeshes).forEach(m=>{m.position.y=.4+Math.sin(t*2+m.position.x)*.12;m.rotation.y+=dt*1.2;});
 
-  // Flail idle sway even without mouse movement
-  if(inventory[selectedSlot]?.defKey==='flail'){
-    flailVel*=.92;
-    flailAngle+=flailVel;
-    if(handItemMesh){handItemMesh.rotation.z=Math.sin(t*2)*.15+flailAngle*.4;}
-  }
-
   // Pickup prompt
   const near=getNearItem();
   const pp=document.getElementById('pickup-prompt');
@@ -1254,18 +1479,36 @@ function animate(){
 
 function movePlayer(dt){
   const dir=new THREE.Vector3();
-  if(keys['w']||keys['arrowup'])    dir.z-=1;
-  if(keys['s']||keys['arrowdown'])  dir.z+=1;
-  if(keys['a']||keys['arrowleft'])  dir.x-=1;
-  if(keys['d']||keys['arrowright']) dir.x+=1;
+  if(!onFire){
+    if(keys['w']||keys['arrowup'])    dir.z-=1;
+    if(keys['s']||keys['arrowdown'])  dir.z+=1;
+    if(keys['a']||keys['arrowleft'])  dir.x-=1;
+    if(keys['d']||keys['arrowright']) dir.x+=1;
+  } else {
+    dir.x=fireVel.x*.12; dir.z=fireVel.z*.12; // fire overrides input
+    if(keys['w']||keys['arrowup'])    dir.z-=.5;
+    if(keys['s']||keys['arrowdown'])  dir.z+=.5;
+  }
   if(dir.lengthSq()>0){
     dir.normalize().applyEuler(new THREE.Euler(0,yaw,0));
     const spd=PLAYER_SPEED*speedMult;
     camera.position.x=Math.max(-48,Math.min(48,camera.position.x+dir.x*spd*dt));
     camera.position.z=Math.max(-48,Math.min(48,camera.position.z+dir.z*spd*dt));
   }
-  camera.position.y=thirdPerson?PLAYER_HEIGHT+2.5:PLAYER_HEIGHT;
-  camera.rotation.y=yaw; camera.rotation.x=thirdPerson?-.3:pitch;
+  // Knockback
+  camera.position.x=Math.max(-48,Math.min(48,camera.position.x+knockbackVel.x*dt));
+  camera.position.z=Math.max(-48,Math.min(48,camera.position.z+knockbackVel.z*dt));
+  knockbackVel.x*=.88; knockbackVel.z*=.88;
+  // Fly / ground
+  if(flying){
+    if(keys[' ']) camera.position.y=Math.min(9,camera.position.y+5*dt);
+    else if(keys['shift']) camera.position.y=Math.max(PLAYER_HEIGHT,camera.position.y-4*dt);
+    else camera.position.y=Math.max(PLAYER_HEIGHT,camera.position.y-1.5*dt);
+    camera.rotation.y=yaw; camera.rotation.x=pitch;
+  } else {
+    camera.position.y=thirdPerson?PLAYER_HEIGHT+2.5:PLAYER_HEIGHT;
+    camera.rotation.y=yaw; camera.rotation.x=thirdPerson?-.3:pitch;
+  }
 }
 
 function getNearItem(){
@@ -1280,7 +1523,7 @@ function getNearItem(){
 
 function updateOverheads(){
   Object.entries(otherPlayers).forEach(([u,op])=>{
-    _v3.set(op.mesh.position.x,op.mesh.position.y+2.1,op.mesh.position.z);
+    _v3.set(op.mesh.position.x,op.mesh.position.y+1.8,op.mesh.position.z);
     const sc=toScreen(_v3);
     if(!op.nameEl){const el=document.createElement('div');el.className='oh-name';el.innerText=u;document.body.appendChild(el);op.nameEl=el;}
     if(sc){
@@ -1290,7 +1533,7 @@ function updateOverheads(){
       op.hpFill.style.width=p+'%';op.hpFill.style.background=p>60?'#2ed573':p>30?'#f39c12':'#eb4d4b';
     } else {op.nameEl.style.display='none';op.hpEl.style.display='none';}
     if(bubbles[u]){
-      _v3.set(op.mesh.position.x,op.mesh.position.y+3.0,op.mesh.position.z);
+      _v3.set(op.mesh.position.x,op.mesh.position.y+2.2,op.mesh.position.z);
       const bs=toScreen(_v3);
       if(bs){bubbles[u].el.style.display='block';bubbles[u].el.style.left=bs.x+'px';bubbles[u].el.style.top=bs.y+'px';}
       else bubbles[u].el.style.display='none';
