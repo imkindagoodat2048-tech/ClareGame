@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <title>SO COOL 26-03-01</title>
+    
     <style>
         /* Styling the countdown text */
         #countdown {
@@ -13,7 +15,7 @@
 </head>
 <body>
 
-    <div id="countdown">Loading countdown...</div>
+    <div id="countdown">LOADING DOOMSDAY</div>
 
     <script>
         // Set the target date
@@ -29,17 +31,17 @@
             const now = new Date().getTime();
             const distance = targetDate - now;
 
-            // Time Calculations for days, hours, minutes and secOnds
+            // time Calculations for days, hOurs, minutes and secOnds
             const days = Math.floor(distance / (1000 * 60 * 60 * 24));
             const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const seconds = Math.floor((distance % (1000 * 60)) / 1000);
 
-            // display the result
+            // dispLay the result
             document.getElementById("countdown").innerHTML = 
                 days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
 
-            // if the cOuntdown is finished dispLay text
+            // if the countdown is finished display text
             if (distance < 0) {
                 clearInterval(timer);
                 document.getElementById("countdown").innerHTML = "IT HAS BEGUN";
