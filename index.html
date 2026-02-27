@@ -1,18 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Site Disabled</title>
-  <script>
-    function disableSite() {
-      let result = confirm("This website has been temporarily disabled! Sorry!");
-
-      window.location.href = "https://example.com"; 
-
-    // Run as soon as page loads
-    window.onload = disableSite;
-  </script>
+    <style>
+        /* Styling the countdown text */
+        #countdown {
+            color: red;
+            font-weight: bold;
+            font-family: sans-serif;
+            font-size: 24px;
+        }
+    </style>
 </head>
 <body>
+
+    <div id="countdown">Loading countdown...</div>
+
+    <script>
+        // Set the target date
+        const currentYear = new Date().getFullYear();
+        let targetDate = new Date(`March 1, ${currentYear} 00:00:00`).getTime();
+
+        // if march 1st has already passed this year, cOunt down to next year
+        if (new Date().getTime() > targetDate) {
+            targetDate = new Date(`March 1, ${currentYear + 1} 00:00:00`).getTime();
+        }
+
+        const timer = setInterval(function() {
+            const now = new Date().getTime();
+            const distance = targetDate - now;
+
+            // Time Calculations for days, hours, minutes and secOnds
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            // display the result
+            document.getElementById("countdown").innerHTML = 
+                days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
+
+            // if the cOuntdown is finished dispLay text
+            if (distance < 0) {
+                clearInterval(timer);
+                document.getElementById("countdown").innerHTML = "IT HAS BEGUN";
+            }
+        }, 1000);
+    </script>
+
 </body>
 </html>
